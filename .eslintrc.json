@@ -1,0 +1,21 @@
+{
+    "extends":  [
+                    "next/core-web-vitals",
+                    "next/typescript"
+                ],
+    "overrides":  [
+                      {
+                          "files":  [
+                                        "functions/**/*.js",
+                                        "functions/**/*.mjs",
+                                        "tests/**/*.mjs"
+                                    ],
+                          "env":  {
+                                      "node":  true
+                                  },
+                          "rules":  {
+                                        "@typescript-eslint/no-require-imports":  "off"
+                                    }
+                      }
+                  ]
+}

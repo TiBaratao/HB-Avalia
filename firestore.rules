@@ -1,0 +1,556 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function memberPath(companyId, uid) {
+      return /databases/$(database)/documents/companies/$(companyId)/members/$(uid);
+    }
+
+    function companyPath(companyId) {
+      return /databases/$(database)/documents/companies/$(companyId);
+    }
+
+    function isCompanyMember(companyId) {
+      return signedIn()
+        && exists(memberPath(companyId, request.auth.uid))
+        && get(memberPath(companyId, request.auth.uid)).data.status == 'ACTIVE';
+    }
+
+    function memberRole(companyId) {
+      return get(memberPath(companyId, request.auth.uid)).data.role;
+    }
+
+    function isAdmin(companyId) {
+      return isCompanyMember(companyId) && memberRole(companyId) == 'ADMIN';
+    }
+
+    function isLeader(companyId) {
+      return isCompanyMember(companyId) && memberRole(companyId) == 'LEADER';
+    }
+
+    function isEmployee(companyId) {
+      return isCompanyMember(companyId) && memberRole(companyId) == 'EMPLOYEE';
+    }
+
+    function sharesTeamWithIds(companyId, otherTeamIds) {
+      let actor = get(memberPath(companyId, request.auth.uid)).data;
+      return actor.teamIds is list && otherTeamIds is list
+        && actor.teamIds.hasAny(otherTeamIds);
+    }
+
+    function sharesTeam(companyId, otherUid) {
+      let other = get(memberPath(companyId, otherUid)).data;
+      return sharesTeamWithIds(companyId, other.teamIds);
+    }
+
+    function targetHasRole(companyId, targetUid, expectedRole) {
+      return exists(memberPath(companyId, targetUid))
+        && get(memberPath(companyId, targetUid)).data.role == expectedRole
+        && get(memberPath(companyId, targetUid)).data.status == 'ACTIVE';
+    }
+
+    function evaluationCycleIsAvailable(companyId, cycleId) {
+      let cycle = get(/databases/$(database)/documents/companies/$(companyId)/cycles/$(cycleId)).data;
+      return cycle.status == 'OPEN'
+        && (!('startsAtAt' in cycle) || cycle.startsAtAt <= request.time)
+        && (!('endsAtAt' in cycle) || cycle.endsAtAt >= request.time);
+    }
+
+    function surveyIsAvailable(companyId, surveyId) {
+      let survey = get(/databases/$(database)/documents/companies/$(companyId)/surveys/$(surveyId)).data;
+      return survey.active == true
+        && survey.startsAtAt <= request.time
+        && survey.endsAtAt >= request.time
+        && survey.audience.hasAny([memberRole(companyId)]);
+    }
+
+    function validSurveyCreate() {
+      let data = request.resource.data;
+      return data.keys().hasOnly([
+          'name', 'startsAt', 'endsAt', 'startsAtAt', 'endsAtAt',
+          'audience', 'questions', 'active', 'createdAt'
+        ])
+        && data.name is string
+        && data.name.size() >= 2
+        && data.name.size() <= 100
+        && data.startsAt is string
+        && data.endsAt is string
+        && data.startsAtAt is timestamp
+        && data.endsAtAt is timestamp
+        && data.startsAtAt <= data.endsAtAt
+        && data.audience is list
+        && data.audience.size() >= 1
+        && data.audience.size() <= 2
+        && ((data.audience.size() == 1 && data.audience.hasAny(['LEADER', 'EMPLOYEE']))
+          || (data.audience.size() == 2 && data.audience.hasAll(['LEADER', 'EMPLOYEE'])))
+        && data.questions is list
+        && data.questions.size() >= 1
+        && data.questions.size() <= 20
+        && data.active == true;
+    }
+
+    function validLeaderChecklistTemplate(companyId) {
+      let data = request.resource.data;
+      let actor = get(memberPath(companyId, request.auth.uid)).data;
+      return isLeader(companyId)
+        && data.createdById == request.auth.uid
+        && data.name is string
+        && data.name.size() >= 2
+        && data.name.size() <= 100
+        && data.departmentId is string
+        && data.frequency in ['DAILY', 'WEEKLY', 'MONTHLY', 'CUSTOM']
+        && data.responsible == 'EMPLOYEE'
+        && data.items is list
+        && data.items.size() > 0
+        && data.items.size() <= 450
+        && data.active is bool
+        && data.teamIds is list
+        && data.teamIds.size() > 0
+        && (!('scheduleEnabled' in data) || data.scheduleEnabled is bool)
+        && (!('scheduleEnabled' in data) || data.scheduleEnabled != true || data.frequency != 'CUSTOM')
+        && (!('scheduleEnabled' in data) || data.scheduleEnabled != true || data.frequency != 'WEEKLY'
+          || (('publishWeekday' in data) && data.publishWeekday is int && data.publishWeekday >= 0 && data.publishWeekday <= 6))
+        && (!('scheduleEnabled' in data) || data.scheduleEnabled != true || data.frequency != 'MONTHLY'
+          || (('publishDayOfMonth' in data) && data.publishDayOfMonth is int && data.publishDayOfMonth >= 1 && data.publishDayOfMonth <= 31))
+        && actor.teamIds is list
+        && actor.teamIds.hasAll(data.teamIds)
+        && data.keys().hasOnly([
+          'name', 'departmentId', 'frequency', 'responsible', 'items',
+          'active', 'createdById', 'teamIds', 'scheduleEnabled',
+          'publishWeekday', 'publishDayOfMonth', 'createdAt', 'updatedAt'
+        ]);
+    }
+
+    function validLeaderChecklistAssignment(companyId) {
+      let data = request.resource.data;
+      let target = get(memberPath(companyId, data.assignedToId)).data;
+      let template = get(/databases/$(database)/documents/companies/$(companyId)/checklistTemplates/$(data.templateId)).data;
+      return isLeader(companyId)
+        && data.keys().hasOnly([
+          'templateId', 'name', 'departmentId', 'items', 'assignedToId',
+          'assignedById', 'status', 'dueAt', 'frequency', 'scheduledFor', 'createdAt'
+        ])
+        && data.assignedById == request.auth.uid
+        && data.scheduledFor is string
+        && data.scheduledFor.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && data.status == 'PENDING'
+        && target.role == 'EMPLOYEE'
+        && target.status == 'ACTIVE'
+        && sharesTeamWithIds(companyId, target.teamIds)
+        && template.createdById == request.auth.uid
+        && template.active == true
+        && template.responsible == 'EMPLOYEE'
+        && template.teamIds is list
+        && template.teamIds.hasAny(target.teamIds)
+        && data.name == template.name
+        && data.departmentId == template.departmentId
+        && data.frequency == template.frequency
+        && data.items == template.items;
+    }
+
+    function validBootstrapAdmin(companyId, userId) {
+      let data = request.resource.data;
+      let company = getAfter(companyPath(companyId)).data;
+      return signedIn()
+        && userId == request.auth.uid
+        && request.auth.token.email is string
+        && data.keys().hasOnly(['uid', 'name', 'email', 'role', 'status', 'teamIds', 'createdAt'])
+        && data.uid == request.auth.uid
+        && data.email == request.auth.token.email
+        && data.role == 'ADMIN'
+        && data.status == 'ACTIVE'
+        && data.teamIds == []
+        && existsAfter(companyPath(companyId))
+        && company.ownerUid == request.auth.uid;
+    }
+
+    function validSelfEnrollment(companyId, userId) {
+      let data = request.resource.data;
+      let company = get(companyPath(companyId)).data;
+      return signedIn()
+        && userId == request.auth.uid
+        && request.auth.token.email is string
+        && exists(companyPath(companyId))
+        && company.selfEnrollmentEnabled == true
+        && data.keys().hasOnly(['uid', 'name', 'email', 'role', 'status', 'teamIds', 'createdAt'])
+        && data.uid == request.auth.uid
+        && data.name is string
+        && data.name.size() >= 2
+        && data.email == request.auth.token.email
+        && company.defaultMemberRole == 'EMPLOYEE'
+        && data.role == 'EMPLOYEE'
+        && data.status == 'ACTIVE'
+        && data.teamIds == [];
+    }
+
+    function validEvaluationCreate(companyId, evaluationId) {
+      let data = request.resource.data;
+      return signedIn()
+        && data.keys().hasOnly([
+          'cycleId', 'evaluatorId', 'evaluatedUserId', 'type', 'status',
+          'comment', 'createdAt', 'updatedAt'
+        ])
+        && data.cycleId is string
+        && data.evaluatorId is string
+        && data.evaluatedUserId is string
+        && data.type in ['EMPLOYEE', 'LEADER']
+        && evaluationId == 'eval_' + companyId + '~' + data.cycleId + '~' + data.evaluatorId + '~' + data.evaluatedUserId + '~' + data.type
+        && exists(/databases/$(database)/documents/companies/$(companyId)/cycles/$(data.cycleId))
+        && evaluationCycleIsAvailable(companyId, data.cycleId)
+        && data.evaluatorId == request.auth.uid
+        && data.status == 'DRAFT'
+        && data.comment is string
+        && data.comment.size() <= 2000
+        && data.createdAt == request.time
+        && data.updatedAt == request.time
+        && ((isLeader(companyId)
+            && data.type == 'EMPLOYEE'
+            && targetHasRole(companyId, data.evaluatedUserId, 'EMPLOYEE')
+            && sharesTeam(companyId, data.evaluatedUserId))
+          || (isEmployee(companyId)
+            && data.type == 'LEADER'
+            && targetHasRole(companyId, data.evaluatedUserId, 'LEADER')
+            && sharesTeam(companyId, data.evaluatedUserId)));
+    }
+
+    function canReadEvaluation(companyId) {
+      return isAdmin(companyId)
+        || (isLeader(companyId)
+          && resource.data.type == 'EMPLOYEE'
+          && resource.data.evaluatorId == request.auth.uid)
+        || (isEmployee(companyId)
+          && resource.data.type == 'LEADER'
+          && resource.data.evaluatorId == request.auth.uid);
+    }
+
+    match /userProfiles/{userId} {
+      allow get: if signedIn() && request.auth.uid == userId;
+      allow list: if false;
+      allow create: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly(['companyId', 'createdAt'])
+        && request.resource.data.companyId is string
+        && existsAfter(memberPath(request.resource.data.companyId, userId))
+        && getAfter(memberPath(request.resource.data.companyId, userId)).data.uid == userId
+        && getAfter(memberPath(request.resource.data.companyId, userId)).data.email == request.auth.token.email
+        && getAfter(memberPath(request.resource.data.companyId, userId)).data.status == 'ACTIVE';
+      allow update, delete: if false;
+    }
+
+    match /companies/{companyId} {
+      allow get: if isCompanyMember(companyId);
+      allow list, delete: if false;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['name', 'ownerUid', 'selfEnrollmentEnabled', 'defaultMemberRole', 'createdAt'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 2
+        && request.resource.data.name.size() <= 100
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.selfEnrollmentEnabled == true
+        && request.resource.data.defaultMemberRole == 'EMPLOYEE';
+      allow update: if isAdmin(companyId)
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'updatedAt', 'teamRosterVersion', 'teamRosterSyncedAt']);
+
+      match /members/{userId} {
+        allow get: if isAdmin(companyId)
+          || (signedIn() && request.auth.uid == userId)
+          || (isLeader(companyId) && resource.data.role == 'EMPLOYEE' && sharesTeamWithIds(companyId, resource.data.teamIds))
+          || (isEmployee(companyId) && resource.data.role == 'LEADER' && sharesTeamWithIds(companyId, resource.data.teamIds));
+        allow list: if isAdmin(companyId)
+          || (isLeader(companyId) && resource.data.role == 'EMPLOYEE' && sharesTeamWithIds(companyId, resource.data.teamIds))
+          || (isEmployee(companyId) && resource.data.role == 'LEADER' && sharesTeamWithIds(companyId, resource.data.teamIds));
+        allow create: if isAdmin(companyId)
+          || validBootstrapAdmin(companyId, userId)
+          || validSelfEnrollment(companyId, userId);
+        allow update: if isAdmin(companyId)
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.email == resource.data.email
+          && request.resource.data.keys().hasOnly(['uid', 'name', 'email', 'role', 'status', 'teamIds', 'positionTitle', 'createdAt', 'updatedAt']);
+        allow delete: if isAdmin(companyId);
+      }
+
+      match /departments/{departmentId} {
+        allow read: if isCompanyMember(companyId);
+        allow write: if isAdmin(companyId);
+      }
+
+      match /teams/{teamId} {
+        allow read: if isCompanyMember(companyId);
+        allow write: if isAdmin(companyId);
+
+        match /members/{memberId} {
+          function isAssignedToThisTeam() {
+            let actor = get(memberPath(companyId, request.auth.uid)).data;
+            return isCompanyMember(companyId)
+              && actor.teamIds is list
+              && actor.teamIds.hasAny([teamId]);
+          }
+
+          allow read: if isAdmin(companyId)
+            || (isAssignedToThisTeam()
+              && ((isLeader(companyId) && resource.data.role == 'EMPLOYEE')
+                || (isEmployee(companyId) && resource.data.role == 'LEADER')));
+          allow write: if isAdmin(companyId);
+        }
+      }
+
+      match /criteria/{criterionId} {
+        allow read: if isCompanyMember(companyId);
+        allow write: if isAdmin(companyId);
+      }
+
+      match /cycles/{cycleId} {
+        allow read: if isCompanyMember(companyId);
+        allow write: if isAdmin(companyId);
+      }
+
+      match /surveys/{surveyId} {
+        allow get, list: if isAdmin(companyId)
+          || (isCompanyMember(companyId) && resource.data.active == true);
+        allow create: if isAdmin(companyId) && validSurveyCreate();
+        allow update: if isAdmin(companyId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active', 'updatedAt'])
+          && request.resource.data.active is bool;
+        allow delete: if isAdmin(companyId);
+
+        match /participants/{userId} {
+          allow get: if signedIn() && request.auth.uid == userId;
+          allow list: if isAdmin(companyId);
+          allow create: if false;
+          allow update: if false;
+          allow delete: if isAdmin(companyId);
+        }
+
+        match /responses/{responseId} {
+          allow get, list: if isAdmin(companyId);
+          allow create: if false;
+          allow update: if false;
+          allow delete: if isAdmin(companyId);
+        }
+      }
+
+      match /checklistTemplates/{templateId} {
+        allow read: if isAdmin(companyId)
+          || (isLeader(companyId) && resource.data.createdById == request.auth.uid)
+          || (isCompanyMember(companyId) && resource.data.active == true);
+        allow create: if isAdmin(companyId) || validLeaderChecklistTemplate(companyId);
+        allow update: if isAdmin(companyId)
+          || (isLeader(companyId)
+            && resource.data.createdById == request.auth.uid
+            && request.resource.data.createdById == resource.data.createdById
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'name', 'departmentId', 'frequency', 'responsible', 'items',
+              'active', 'teamIds', 'scheduleEnabled', 'publishWeekday',
+              'publishDayOfMonth', 'updatedAt'
+            ])
+            && validLeaderChecklistTemplate(companyId));
+        allow delete: if isAdmin(companyId)
+          || (isLeader(companyId) && resource.data.createdById == request.auth.uid);
+      }
+
+      match /checklistAssignments/{assignmentId} {
+        allow read: if isAdmin(companyId)
+          || (signedIn() && resource.data.assignedToId == request.auth.uid)
+          || (isLeader(companyId) && sharesTeam(companyId, resource.data.assignedToId));
+        allow create: if isAdmin(companyId) || validLeaderChecklistAssignment(companyId);
+        allow delete: if isAdmin(companyId);
+        allow update: if isAdmin(companyId)
+          || (signedIn()
+            && resource.data.assignedToId == request.auth.uid
+            && request.resource.data.status in ['PENDING', 'COMPLETED']
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']));
+
+        match /results/{itemId} {
+          function assignment() {
+            return get(/databases/$(database)/documents/companies/$(companyId)/checklistAssignments/$(assignmentId)).data;
+          }
+
+          allow read: if isAdmin(companyId)
+            || (signedIn() && assignment().assignedToId == request.auth.uid)
+            || (isLeader(companyId) && sharesTeam(companyId, assignment().assignedToId));
+          allow create: if isAdmin(companyId)
+            || (isLeader(companyId)
+              && assignment().assignedById == request.auth.uid
+              && sharesTeam(companyId, assignment().assignedToId)
+              && request.resource.data.keys().hasOnly(['status', 'observation', 'completedAt'])
+              && request.resource.data.status == 'PENDING')
+            || (signedIn()
+              && assignment().assignedToId == request.auth.uid
+              && request.resource.data.keys().hasOnly(['status', 'observation', 'completedAt'])
+              && request.resource.data.status in ['PENDING', 'COMPLETED']);
+          allow update: if isAdmin(companyId)
+            || (signedIn()
+              && assignment().assignedToId == request.auth.uid
+              && request.resource.data.keys().hasOnly(['status', 'observation', 'completedAt'])
+              && request.resource.data.status in ['PENDING', 'COMPLETED']);
+          allow delete: if isAdmin(companyId);
+        }
+      }
+
+      match /developmentPlans/{employeeId} {
+        allow get: if isAdmin(companyId)
+          || (isEmployee(companyId) && request.auth.uid == employeeId)
+          || (isLeader(companyId)
+            && targetHasRole(companyId, employeeId, 'EMPLOYEE')
+            && sharesTeam(companyId, employeeId));
+        allow list: if isAdmin(companyId);
+        allow create: if isLeader(companyId)
+          && request.resource.data.keys().hasOnly([
+            'employeeId', 'leaderId', 'teamIds', 'targetPosition', 'goals',
+            'status', 'createdAt', 'updatedAt'
+          ])
+          && request.resource.data.employeeId == employeeId
+          && request.resource.data.leaderId == request.auth.uid
+          && targetHasRole(companyId, employeeId, 'EMPLOYEE')
+          && request.resource.data.teamIds is list
+          && request.resource.data.teamIds.size() > 0
+          && request.resource.data.teamIds.size() <= 20
+          && sharesTeamWithIds(companyId, request.resource.data.teamIds)
+          && get(memberPath(companyId, employeeId)).data.teamIds.hasAny(request.resource.data.teamIds)
+          && request.resource.data.targetPosition is string
+          && request.resource.data.targetPosition.size() >= 2
+          && request.resource.data.targetPosition.size() <= 100
+          && request.resource.data.goals is list
+          && request.resource.data.goals.size() >= 1
+          && request.resource.data.goals.size() <= 30
+          && request.resource.data.status == 'ACTIVE'
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.updatedAt == request.time;
+        allow update: if (isLeader(companyId)
+          && sharesTeamWithIds(companyId, resource.data.teamIds)
+          && request.resource.data.employeeId == resource.data.employeeId
+          && request.resource.data.leaderId == request.auth.uid
+          && resource.data.status == 'ACTIVE'
+          && request.resource.data.status == 'ACTIVE'
+          && (!exists(/databases/$(database)/documents/companies/$(companyId)/promotionStatuses/$(employeeId))
+            || get(/databases/$(database)/documents/companies/$(companyId)/promotionStatuses/$(employeeId)).data.status != 'PENDING')
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'leaderId', 'teamIds', 'targetPosition', 'goals', 'updatedAt'
+          ])
+          && request.resource.data.teamIds is list
+          && request.resource.data.teamIds.size() > 0
+          && request.resource.data.teamIds.size() <= 20
+          && sharesTeamWithIds(companyId, request.resource.data.teamIds)
+          && get(memberPath(companyId, employeeId)).data.teamIds.hasAny(request.resource.data.teamIds)
+          && request.resource.data.targetPosition is string
+          && request.resource.data.targetPosition.size() >= 2
+          && request.resource.data.targetPosition.size() <= 100
+          && request.resource.data.goals is list
+          && request.resource.data.goals.size() >= 1
+          && request.resource.data.goals.size() <= 30
+          && request.resource.data.updatedAt == request.time)
+          || (isLeader(companyId)
+            && resource.data.status == 'PROMOTED'
+            && exists(/databases/$(database)/documents/companies/$(companyId)/promotionStatuses/$(employeeId))
+            && get(/databases/$(database)/documents/companies/$(companyId)/promotionStatuses/$(employeeId)).data.status == 'APPROVED'
+            && request.resource.data.keys().hasOnly([
+              'employeeId', 'leaderId', 'teamIds', 'targetPosition', 'goals',
+              'status', 'createdAt', 'updatedAt'
+            ])
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'leaderId', 'teamIds', 'targetPosition', 'goals', 'status', 'createdAt', 'updatedAt'
+            ])
+            && request.resource.data.employeeId == employeeId
+            && request.resource.data.leaderId == request.auth.uid
+            && targetHasRole(companyId, employeeId, 'EMPLOYEE')
+            && request.resource.data.teamIds is list
+            && request.resource.data.teamIds.size() > 0
+            && request.resource.data.teamIds.size() <= 20
+            && sharesTeamWithIds(companyId, request.resource.data.teamIds)
+            && get(memberPath(companyId, employeeId)).data.teamIds.hasAny(request.resource.data.teamIds)
+            && request.resource.data.targetPosition is string
+            && request.resource.data.targetPosition.size() >= 2
+            && request.resource.data.targetPosition.size() <= 100
+            && request.resource.data.goals is list
+            && request.resource.data.goals.size() >= 1
+            && request.resource.data.goals.size() <= 30
+            && request.resource.data.status == 'ACTIVE'
+            && request.resource.data.createdAt == request.time
+            && request.resource.data.updatedAt == request.time)
+          || (isAdmin(companyId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+            && request.resource.data.status == 'PROMOTED'
+            && request.resource.data.updatedAt == request.time);
+        allow delete: if isAdmin(companyId);
+      }
+
+      match /promotionRequests/{requestId} {
+        allow get: if isAdmin(companyId)
+          || (isLeader(companyId)
+            && targetHasRole(companyId, resource.data.employeeId, 'EMPLOYEE')
+            && sharesTeam(companyId, resource.data.employeeId));
+        allow list: if isAdmin(companyId);
+        allow create: if false;
+        allow update: if false;
+        allow delete: if false;
+      }
+      match /promotionStatuses/{employeeId} {
+        allow get: if isAdmin(companyId)
+          || (isLeader(companyId)
+            && targetHasRole(companyId, employeeId, 'EMPLOYEE')
+            && sharesTeam(companyId, employeeId));
+        allow list: if isAdmin(companyId);
+        allow create: if false;
+        allow update: if false;
+        allow delete: if false;
+      }
+      match /evaluations/{evaluationId} {
+        allow get, list: if canReadEvaluation(companyId);
+        allow create: if validEvaluationCreate(companyId, evaluationId);
+        allow update: if signedIn()
+          && resource.data.evaluatorId == request.auth.uid
+          && resource.data.status == 'DRAFT'
+          && request.resource.data.status == 'DRAFT'
+          && request.resource.data.evaluatorId == resource.data.evaluatorId
+          && request.resource.data.evaluatedUserId == resource.data.evaluatedUserId
+          && request.resource.data.type == resource.data.type
+          && request.resource.data.cycleId == resource.data.cycleId
+          && request.resource.data.keys().hasOnly([
+            'cycleId', 'evaluatorId', 'evaluatedUserId', 'type', 'status',
+            'comment', 'createdAt', 'updatedAt'
+          ])
+          && request.resource.data.comment is string
+          && request.resource.data.comment.size() <= 2000
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.updatedAt == request.time
+          && ((isLeader(companyId) && resource.data.type == 'EMPLOYEE')
+            || (isEmployee(companyId) && resource.data.type == 'LEADER'));
+        allow delete: if isAdmin(companyId);
+
+        match /answers/{answerId} {
+          function parentEvaluation() {
+            return get(/databases/$(database)/documents/companies/$(companyId)/evaluations/$(evaluationId)).data;
+          }
+
+          function canAccessParentEvaluation() {
+            return isAdmin(companyId)
+              || (isLeader(companyId)
+                && parentEvaluation().type == 'EMPLOYEE'
+                && parentEvaluation().evaluatorId == request.auth.uid)
+              || (isEmployee(companyId)
+                && parentEvaluation().type == 'LEADER'
+                && parentEvaluation().evaluatorId == request.auth.uid);
+          }
+
+          allow read: if canAccessParentEvaluation();
+          allow create, update: if canAccessParentEvaluation()
+            && parentEvaluation().status == 'DRAFT'
+            && request.resource.data.keys().hasOnly(['criterionId', 'score'])
+            && request.resource.data.criterionId == answerId
+            && request.resource.data.score is int
+            && request.resource.data.score >= 1
+            && request.resource.data.score <= 5
+            && exists(/databases/$(database)/documents/companies/$(companyId)/criteria/$(answerId))
+            && get(/databases/$(database)/documents/companies/$(companyId)/criteria/$(answerId)).data.active == true
+            && get(/databases/$(database)/documents/companies/$(companyId)/criteria/$(answerId)).data.evaluationType == parentEvaluation().type;
+          allow delete: if isAdmin(companyId) && parentEvaluation().status == 'DRAFT';
+        }
+      }
+    }
+  }
+}
