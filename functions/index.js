@@ -1,5 +1,5 @@
 const { initializeApp } = require("firebase-admin/app");
-const { getFirestore } = require("firebase-admin/firestore");
+const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { logger } = require("firebase-functions");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { publishScheduledChecklists } = require("./scheduled-checklists-core");
@@ -14,7 +14,7 @@ exports.publishScheduledChecklists = onSchedule(
     timeoutSeconds: 540,
     memory: "512MiB",
   },
-  async () => publishScheduledChecklists(getFirestore(), { logger }),
+  async () => publishScheduledChecklists(getFirestore(), { logger, fieldValue: FieldValue }),
 );
 
 const secureActions = require("./secure-actions");

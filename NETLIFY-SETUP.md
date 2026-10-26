@@ -33,6 +33,8 @@ The app's server routes verify Firebase ID tokens and write with Firebase Admin.
 
 Netlify Scheduled Functions are available on all Netlify plans, but have a 30-second execution limit. The current job processes templates and recipients sequentially, so verify its run duration and logs after deployment. The fresh project starts with no historical workload; if the number of scheduled assignments grows enough to exceed the limit, the job will need bounded batching/background processing before that scale is reached.
 
+The job uses a collection-group query over `checklistTemplates` filtered by `scheduleEnabled`. Its collection-group index is declared in `firestore.indexes.json`; publish it with `firebase deploy --only firestore:indexes --project hb-avalia2` before relying on the schedule. Without that index the job fails with `FAILED_PRECONDITION` and publishes nothing.
+
 ## First-run verification
 
 After the site and destination are configured:

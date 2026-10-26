@@ -1,4 +1,4 @@
-const { FieldValue } = require("firebase-admin/firestore");
+const FALLBACK_FIELD_VALUE = { serverTimestamp: () => new Date() };
 
 const TIME_ZONE = "America/Sao_Paulo";
 
@@ -78,7 +78,7 @@ async function createScheduledAssignment(db, input, fieldValue) {
 async function publishScheduledChecklists(db, options = {}) {
   const logger = options.logger || console;
   const now = options.now || new Date();
-  const fieldValue = options.fieldValue || FieldValue;
+  const fieldValue = options.fieldValue || FALLBACK_FIELD_VALUE;
   const dateParts = localDateParts(now);
   const scheduledFor = `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
   const templates = await db.collectionGroup("checklistTemplates")
