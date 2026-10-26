@@ -2,10 +2,17 @@ const { FieldValue, getFirestore } = require("firebase-admin/firestore");
 const { HttpsError, onCall } = require("firebase-functions/v2/https");
 const { logger } = require("firebase-functions");
 const {
-  averageEvaluationScores,
+  calculatePromotionEvaluationResult,
   validateEvaluationAnswers,
   validateSurveyAnswers,
 } = require("./domain");
+const {
+  getActiveSharedTeamIds,
+  getMemberTeamIds,
+  isActivePromotionAdmin,
+  createPromotionEvaluationEvidence,
+  createPromotionEvaluationPrivacyFields,
+} = require("./promotion-security");
 
 const REGION = "southamerica-east1";
 const MAX_PROMOTION_EVALUATIONS = 30;
@@ -62,16 +69,6 @@ function surveyIsAvailable(survey, role, now) {
 
 function evaluationDocumentId(companyId, cycleId, evaluatorId, evaluatedUserId, type) {
   return `eval_${companyId}~${cycleId}~${evaluatorId}~${evaluatedUserId}~${type}`;
-}
-
-function promotionSnapshot(evaluation, cycle) {
-  return {
-    evaluationId: evaluation.id,
-    cycleName: typeof cycle?.name === "string" ? cycle.name : "Ciclo sem nome",
-    score: evaluation.averageScore,
-    comment: typeof evaluation.comment === "string" ? evaluation.comment : "",
-    submittedAt: evaluation.submittedAt,
-  };
 }
 
 exports.submitEvaluation = onCall({ region: REGION }, async (request) => {
@@ -194,15 +191,22 @@ exports.submitPromotionRequest = onCall({ region: REGION }, async (request) => {
   const data = request.data || {};
   const companyId = requireString(data.companyId, "Empresa");
   const employeeId = requireString(data.employeeId, "Colaborador");
+  const targetPosition = requireString(data.targetPosition, "Cargo desejado", 100);
+  if (targetPosition.length < 2) throw new HttpsError("invalid-argument", "Informe o cargo desejado (2 a 100 caracteres).");
   const justification = typeof data.justification === "string" ? data.justification.trim() : "";
   if (justification.length < 20 || justification.length > 1500) {
     throw new HttpsError("invalid-argument", "Explique em 20 a 1.500 caracteres por que a pessoa está apta à promoção.");
   }
+  let promotionDetails;
+  try {
+    promotionDetails = calculatePromotionEvaluationResult(data.indicators, data.competencies);
+  } catch (error) {
+    throw new HttpsError("invalid-argument", error instanceof Error ? error.message : "Os dados da avaliação de promoção são inválidos.");
+  }
 
   const db = getFirestore();
   const companyRef = db.collection("companies").doc(companyId);
-  const plansRef = companyRef.collection("developmentPlans");
-  const planRef = plansRef.doc(employeeId);
+  const planRef = companyRef.collection("developmentPlans").doc(employeeId);
   const statusRef = companyRef.collection("promotionStatuses").doc(employeeId);
   const requestRef = companyRef.collection("promotionRequests").doc();
 
@@ -225,62 +229,96 @@ exports.submitPromotionRequest = onCall({ region: REGION }, async (request) => {
       ]);
       const leader = leaderSnapshot.data();
       const employee = employeeSnapshot.data();
-      const plan = planSnapshot.data();
       if (!leaderSnapshot.exists || leader?.status !== "ACTIVE" || leader.role !== "LEADER") throw new HttpsError("permission-denied", "Somente a liderança pode enviar uma indicação.");
-      if (!employeeSnapshot.exists || employee?.status !== "ACTIVE" || employee.role !== "EMPLOYEE" || !sharesTeam(leader, employee)) {
+      if (!employeeSnapshot.exists || employee?.status !== "ACTIVE" || employee.role !== "EMPLOYEE") {
         throw new HttpsError("permission-denied", "Você não pode indicar este colaborador.");
       }
-      if (!planSnapshot.exists || plan.status !== "ACTIVE" || plan.leaderId !== uid || plan.employeeId !== employeeId) {
-        throw new HttpsError("failed-precondition", "O PDI ativo não pertence à sua liderança.");
-      }
-      if (!Array.isArray(plan.goals) || plan.goals.length === 0 || plan.goals.length > 30 || plan.goals.some((goal) => goal.completed !== true)) {
-        throw new HttpsError("failed-precondition", "Conclua todas as metas do PDI antes de enviar a indicação.");
-      }
-      if (!Array.isArray(plan.teamIds) || !plan.teamIds.some((teamId) => teamIdsOf(leader).includes(teamId) && teamIdsOf(employee).includes(teamId))) {
-        throw new HttpsError("failed-precondition", "O PDI não está associado a uma equipe compartilhada ativa.");
-      }
+      const sharedTeamIds = getActiveSharedTeamIds(leader, employee);
+      if (!sharedTeamIds.length) throw new HttpsError("failed-precondition", "O colaborador não está em uma equipe compartilhada ativa.");
       if (statusSnapshot.exists && statusSnapshot.data().status === "PENDING") {
         throw new HttpsError("already-exists", "Já existe uma indicação em análise para este colaborador.");
       }
 
       const sourceSnapshots = evaluationsSnapshot.docs;
-      const answerSnapshots = await Promise.all(sourceSnapshots.map((snapshot) => transaction.get(snapshot.ref.collection("answers"))));
+      const answerSnapshots = await Promise.all(sourceSnapshots.map((snapshot) =>
+        transaction.get(snapshot.ref.collection("answers"))));
       const evaluations = sourceSnapshots.flatMap((snapshot, index) => {
-        const answers = answerSnapshots[index].docs.map((answer) => ({ id: answer.id, ...answer.data() }));
+        const answers = answerSnapshots[index].docs.map((answer) => ({
+          id: answer.id,
+          criterionId: answer.get("criterionId"),
+          score: answer.get("score"),
+        }));
         if (!answers.length || answers.some((answer) => answer.criterionId !== answer.id
           || !Number.isInteger(answer.score) || answer.score < 1 || answer.score > 5)) return [];
         const averageScore = Number((answers.reduce((sum, answer) => sum + answer.score, 0) / answers.length).toFixed(2));
-        return [{ id: snapshot.id, ...snapshot.data(), averageScore }];
+        return [{
+          id: snapshot.id,
+          averageScore,
+          cycleId: snapshot.get("cycleId"),
+          comment: snapshot.get("comment"),
+          submittedAt: snapshot.get("submittedAt"),
+        }];
       });
-      const cycleIds = [...new Set(evaluations.map((evaluation) => evaluation.cycleId).filter((id) => typeof id === "string"))];
-      const cycleSnapshots = await Promise.all(cycleIds.map((cycleId) => transaction.get(companyRef.collection("cycles").doc(cycleId))));
+      const cycleIds = [...new Set(evaluations
+        .map((evaluation) => evaluation.cycleId)
+        .filter((id) => typeof id === "string"))];
+      const cycleSnapshots = await Promise.all(cycleIds.map((cycleId) =>
+        transaction.get(companyRef.collection("cycles").doc(cycleId))));
       const cyclesById = new Map(cycleSnapshots.map((snapshot) => [snapshot.id, snapshot.data()]));
-      const evidence = evaluations.map((evaluation) => promotionSnapshot(evaluation, cyclesById.get(evaluation.cycleId)));
-      const averageScore = averageEvaluationScores(evaluations);
+      const evidence = evaluations.map((evaluation) =>
+        createPromotionEvaluationEvidence(evaluation, cyclesById.get(evaluation.cycleId)));
+
       const now = FieldValue.serverTimestamp();
+      transaction.set(planRef, {
+        employeeId,
+        leaderId: uid,
+        teamIds: sharedTeamIds,
+        targetPosition,
+        status: "ACTIVE",
+        createdAt: planSnapshot.data()?.createdAt ?? now,
+        updatedAt: now,
+      }, { merge: true });
       transaction.create(requestRef, {
         employeeId,
         leaderId: uid,
         developmentPlanId: employeeId,
-        targetPosition: plan.targetPosition,
+        targetPosition,
         justification,
-        averageScore,
-        evaluations: evidence,
-        goals: plan.goals,
+        ...createPromotionEvaluationPrivacyFields(),
+        indicators: promotionDetails.indicators,
+        competencies: promotionDetails.competencies,
+        promotionResult: {
+          indicatorWeightTotal: promotionDetails.indicatorWeightTotal,
+          competenceWeightTotal: promotionDetails.competenceWeightTotal,
+          indicatorTotal: promotionDetails.indicatorTotal,
+          indicatorBase: promotionDetails.indicatorBase,
+          competenceTotal: promotionDetails.competenceTotal,
+          baseScore: promotionDetails.baseScore,
+          extraScore: promotionDetails.extraScore,
+          finalScore: promotionDetails.finalScore,
+          classification: promotionDetails.classification,
+        },
         status: "PENDING",
         submittedAt: now,
+      });
+      evidence.forEach((item) => {
+        transaction.create(requestRef.collection("evaluationEvidence").doc(item.evaluationId), item);
       });
       transaction.set(statusRef, {
         employeeId,
         leaderId: uid,
-        teamIds: plan.teamIds,
+        teamIds: sharedTeamIds,
         requestId: requestRef.id,
-        targetPosition: plan.targetPosition,
+        targetPosition,
         status: "PENDING",
         submittedAt: now,
         updatedAt: now,
       });
-      return { requestId: requestRef.id, averageScore, evaluationCount: evidence.length };
+      return {
+        requestId: requestRef.id,
+        averageScore: null,
+        evaluationCount: 0,
+      };
     });
   } catch (error) {
     throw callableError(error, "Não foi possível enviar a indicação de promoção.");
@@ -304,6 +342,10 @@ exports.decidePromotionRequest = onCall({ region: REGION }, async (request) => {
   try {
     await db.runTransaction(async (transaction) => {
       const adminRef = companyRef.collection("members").doc(uid);
+      const adminSnapshot = await transaction.get(adminRef);
+      if (!adminSnapshot.exists || !isActivePromotionAdmin(adminSnapshot.data())) {
+        throw new HttpsError("permission-denied", "Somente a administração pode decidir uma indicação.");
+      }
       const requestSnapshot = await transaction.get(requestRef);
       if (!requestSnapshot.exists) throw new HttpsError("not-found", "A indicação não foi encontrada.");
       const promotion = requestSnapshot.data();
@@ -311,16 +353,11 @@ exports.decidePromotionRequest = onCall({ region: REGION }, async (request) => {
       const statusRef = companyRef.collection("promotionStatuses").doc(employeeId);
       const employeeRef = companyRef.collection("members").doc(employeeId);
       const planRef = companyRef.collection("developmentPlans").doc(employeeId);
-      const [adminSnapshot, statusSnapshot, employeeSnapshot, planSnapshot] = await Promise.all([
-        transaction.get(adminRef),
+      const [statusSnapshot, employeeSnapshot, planSnapshot] = await Promise.all([
         transaction.get(statusRef),
         transaction.get(employeeRef),
         transaction.get(planRef),
       ]);
-      const admin = adminSnapshot.data();
-      if (!adminSnapshot.exists || admin?.role !== "ADMIN" || admin.status !== "ACTIVE") {
-        throw new HttpsError("permission-denied", "Somente a administração pode decidir uma indicação.");
-      }
       if (promotion.status !== "PENDING" || !statusSnapshot.exists || statusSnapshot.data().status !== "PENDING" || statusSnapshot.data().requestId !== requestId) {
         throw new HttpsError("failed-precondition", "Esta indicação já foi analisada ou substituída.");
       }
@@ -332,7 +369,7 @@ exports.decidePromotionRequest = onCall({ region: REGION }, async (request) => {
       }
 
       const rosterRefs = decision === "APPROVED"
-        ? teamIdsOf(employeeSnapshot.data()).map((teamId) => companyRef.collection("teams").doc(teamId).collection("members").doc(employeeId))
+        ? getMemberTeamIds(employeeSnapshot.data()).map((teamId) => companyRef.collection("teams").doc(teamId).collection("members").doc(employeeId))
         : [];
       const rosterSnapshots = rosterRefs.length ? await transaction.getAll(...rosterRefs) : [];
       const now = FieldValue.serverTimestamp();

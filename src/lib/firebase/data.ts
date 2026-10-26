@@ -21,8 +21,7 @@ import {
   type QueryDocumentSnapshot,
   type QuerySnapshot,
 } from "firebase/firestore";
-import { getFirebaseDb, getFirebaseFunctions } from "./client";
-import { httpsCallable } from "firebase/functions";
+import { getFirebaseAuth, getFirebaseDb } from "./client";
 import {
   checklistAssignmentDocument,
   checklistAssignmentResults,
@@ -47,7 +46,6 @@ import type {
   ChecklistTemplateDocument,
   CompanyDocument,
   CompanyMember,
-  DevelopmentGoal,
   DevelopmentPlanDocument,
   PromotionRequestDocument,
   PromotionRequestStatusDocument,
@@ -59,6 +57,7 @@ import type {
   EvaluationWithId,
   FirebaseEvaluationType,
   FirebaseRole,
+  PromotionEvaluationSnapshot,
   SurveyDocument,
   SurveyQuestion,
   SurveyResponseDocument,
@@ -84,6 +83,7 @@ export interface WorkspaceData {
   developmentPlans: Array<DocumentWithId<DevelopmentPlanDocument>>;
   promotionRequests: Array<DocumentWithId<PromotionRequestDocument>>;
   developmentAccessAvailable: boolean;
+  restrictedPromotionHistory: boolean;
 }
 
 function evaluationDraftId(companyId: string, cycleId: string, evaluatorId: string, evaluatedUserId: string, type: FirebaseEvaluationType) {
@@ -103,10 +103,10 @@ async function withOptionalAccess<T>(label: string, operation: Promise<T>, fallb
   try {
     return { value: await operation, available: true };
   } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
     const code = error && typeof error === "object" && "code" in error
       ? String((error as { code?: unknown }).code)
       : "";
-    const detail = error instanceof Error ? error.message : String(error);
     if (code === "permission-denied" || /missing or insufficient permissions/i.test(detail)) {
       return { value: fallback, available: false };
     }
@@ -294,13 +294,19 @@ export async function loadWorkspaceData(companyId: string, uid: string): Promise
     return [assignment.id, withIds<ChecklistResultDocument>(snapshot)] as const;
   }));
 
+  const leaderPdiEmployees = member.role === "LEADER"
+    ? members.filter((person) => person.role === "EMPLOYEE"
+      && person.status === "ACTIVE"
+      && person.teamIds.some((teamId) => member.teamIds.includes(teamId)))
+    : [];
+  let restrictedPromotionHistory = false;
   const [planRead, requestRead] = await Promise.all([
     withOptionalAccess<DocumentSnapshot<DocumentData>[]>(
       member.role === "ADMIN" ? "Leitura dos PDIs" : member.role === "LEADER" ? "Leitura dos PDIs da equipe" : "Leitura do seu PDI",
       member.role === "ADMIN"
         ? getDocs(developmentPlanCollection(companyId)).then((snapshot) => snapshot.docs)
         : member.role === "LEADER"
-          ? Promise.all(members.filter((person) => person.role === "EMPLOYEE")
+          ? Promise.all(leaderPdiEmployees
             .map((person) => getDoc(developmentPlanDocument(companyId, person.uid))))
             .then((snapshots) => snapshots.filter((snapshot) => snapshot.exists()))
           : getDoc(developmentPlanDocument(companyId, uid)).then((snapshot) => snapshot.exists() ? [snapshot] : []),
@@ -311,14 +317,26 @@ export async function loadWorkspaceData(companyId: string, uid: string): Promise
       member.role === "ADMIN"
         ? getDocs(promotionRequestCollection(companyId)).then((snapshot) => snapshot.docs)
         : member.role === "LEADER"
-          ? Promise.all(members.filter((person) => person.role === "EMPLOYEE")
+          ? Promise.all(leaderPdiEmployees
             .map(async (person) => {
               const statusSnapshot = await getDoc(promotionRequestStatusDocument(companyId, person.uid));
               if (!statusSnapshot.exists()) return null;
               const status = statusSnapshot.data() as PromotionRequestStatusDocument;
               if (!status.requestId) return null;
-              const requestSnapshot = await getDoc(promotionRequestDocument(companyId, status.requestId));
-              return requestSnapshot.exists() ? requestSnapshot : null;
+              try {
+                const requestSnapshot = await getDoc(promotionRequestDocument(companyId, status.requestId));
+                return requestSnapshot.exists() ? requestSnapshot : null;
+              } catch (error) {
+                const code = error && typeof error === "object" && "code" in error
+                  ? String((error as { code?: unknown }).code)
+                  : "";
+                const detail = error instanceof Error ? error.message : String(error);
+                if (code === "permission-denied" || /missing or insufficient permissions/i.test(detail)) {
+                  restrictedPromotionHistory = true;
+                  return null;
+                }
+                throw error;
+              }
             }))
             .then((snapshots) => snapshots.filter((snapshot) => snapshot !== null) as DocumentSnapshot<DocumentData>[])
           : Promise.resolve([] as DocumentSnapshot<DocumentData>[]),
@@ -327,6 +345,27 @@ export async function loadWorkspaceData(companyId: string, uid: string): Promise
   ]);
   const developmentPlanSnapshots = planRead.value;
   const promotionRequestSnapshots = requestRead.value;
+  const promotionRequests = await Promise.all(promotionRequestSnapshots.map(async (snapshot) => {
+    const request = snapshot.data() as PromotionRequestDocument;
+    if (member.role !== "ADMIN" || request.evaluationEvidenceVersion !== 2) {
+      return { id: snapshot.id, ...request } as DocumentWithId<PromotionRequestDocument>;
+    }
+
+    const evidenceSnapshot = await withAccessContext(
+      "Leitura das evidências confidenciais da indicação",
+      getDocs(collection(db, "companies", companyId, "promotionRequests", snapshot.id, "evaluationEvidence")),
+    );
+    const evaluations = withIds<PromotionEvaluationSnapshot>(evidenceSnapshot);
+    const averageScore = evaluations.length
+      ? Number((evaluations.reduce((sum, evaluation) => sum + evaluation.score, 0) / evaluations.length).toFixed(2))
+      : null;
+    return {
+      id: snapshot.id,
+      ...request,
+      averageScore,
+      evaluations,
+    } as DocumentWithId<PromotionRequestDocument>;
+  }));
 
   return {
     company,
@@ -343,52 +382,54 @@ export async function loadWorkspaceData(companyId: string, uid: string): Promise
     results: Object.fromEntries(resultPairs),
     evaluations: evaluationItems,
     developmentPlans: developmentPlanSnapshots.map((item) => ({ id: item.id, ...item.data() }) as DocumentWithId<DevelopmentPlanDocument>),
-    promotionRequests: promotionRequestSnapshots.map((item) => ({ id: item.id, ...item.data() }) as DocumentWithId<PromotionRequestDocument>),
+    promotionRequests,
     developmentAccessAvailable: planRead.available && requestRead.available,
+    restrictedPromotionHistory,
   };
 }
 
-export async function saveDevelopmentPlan(input: {
-  companyId: string;
-  employeeId: string;
-  leaderId: string;
-  teamIds: string[];
-  targetPosition: string;
-  goals: DevelopmentGoal[];
-  createdAt?: unknown;
-}) {
-  const targetPosition = input.targetPosition.trim();
-  if (targetPosition.length < 2 || targetPosition.length > 100) throw new Error("Informe o cargo desejado (2 a 100 caracteres).");
-  if (!input.goals.length || input.goals.length > 30) throw new Error("O PDI precisa ter de 1 a 30 metas.");
-  if (input.goals.some((goal) => goal.title.trim().length < 2 || goal.title.trim().length > 120
-    || goal.description.trim().length > 500)) {
-    throw new Error("Revise os títulos e descrições das metas.");
+async function requestServerApi(url: string, method: "POST" | "PATCH", input: object): Promise<Record<string, unknown>> {
+  const user = getFirebaseAuth().currentUser;
+  if (!user) throw new Error("Faça login para continuar.");
+  const idToken = await user.getIdToken();
+  const response = await fetch(url, {
+    method,
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(input),
+  });
+
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error("O servidor retornou uma resposta inválida.");
   }
-  const cleanGoals = input.goals.map((goal) => ({
-    ...goal,
-    title: goal.title.trim(),
-    description: goal.description.trim(),
-  }));
-  await setDoc(developmentPlanDocument(input.companyId, input.employeeId), {
-    employeeId: input.employeeId,
-    leaderId: input.leaderId,
-    teamIds: input.teamIds,
-    targetPosition,
-    goals: cleanGoals,
-    status: "ACTIVE",
-    updatedAt: serverTimestamp(),
-    createdAt: input.createdAt ?? serverTimestamp(),
-  }, { merge: true });
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+    throw new Error("O servidor retornou uma resposta inválida.");
+  }
+  const result = payload as Record<string, unknown>;
+  if (!response.ok) {
+    throw new Error(typeof result.error === "string" ? result.error : "Não foi possível processar a solicitação.");
+  }
+  return result;
 }
 
 export async function submitPromotionRequest(input: {
   companyId: string;
   employeeId: string;
+  targetPosition: string;
   justification: string;
+  indicators: Array<{ id: string; percentage: number }>;
+  competencies: Array<{ id: string; score: number }>;
 }) {
-  const call = httpsCallable<typeof input, { requestId: string }>(getFirebaseFunctions(), "submitPromotionRequest");
-  const result = await call(input);
-  return result.data.requestId;
+  const result = await requestServerApi("/api/promotion-requests", "POST", input);
+  if (typeof result.requestId !== "string") {
+    throw new Error("O servidor não retornou o identificador da indicação.");
+  }
+  return result.requestId;
 }
 
 export async function decidePromotionRequest(input: {
@@ -397,9 +438,15 @@ export async function decidePromotionRequest(input: {
   decision: "APPROVED" | "REJECTED";
   adminNote: string;
 }) {
-  const call = httpsCallable<typeof input, { status: "APPROVED" | "REJECTED" }>(getFirebaseFunctions(), "decidePromotionRequest");
-  const result = await call(input);
-  return result.data.status;
+  const result = await requestServerApi(
+    `/api/promotion-requests/${encodeURIComponent(input.requestId)}/decision`,
+    "PATCH",
+    input,
+  );
+  if (result.status !== "APPROVED" && result.status !== "REJECTED") {
+    throw new Error("O servidor não retornou uma decisão válida para a indicação.");
+  }
+  return result.status;
 }
 export type SurveyResponseCursor = QueryDocumentSnapshot<DocumentData>;
 
@@ -670,9 +717,9 @@ export async function submitSurveyResponse(input: {
   surveyId: string;
   answers: Array<{ questionId: string; value: string | number }>;
 }) {
-  const call = httpsCallable<typeof input, { responseId: string }>(getFirebaseFunctions(), "submitSurveyResponse");
-  const result = await call(input);
-  return result.data.responseId;
+  const result = await requestServerApi("/api/surveys/responses", "POST", input);
+  if (typeof result.responseId !== "string") throw new Error("O servidor não retornou o identificador da resposta.");
+  return result.responseId;
 }
 export async function createChecklistTemplate(companyId: string, input: {
   name: string;
@@ -978,9 +1025,9 @@ export async function submitEvaluation(input: {
   comment: string;
   answers: Array<{ criterionId: string; score: number }>;
 }, existingEvaluationId?: string) {
-  const call = httpsCallable<typeof input & { existingEvaluationId?: string }, { evaluationId: string }>(getFirebaseFunctions(), "submitEvaluation");
-  const result = await call({ ...input, existingEvaluationId });
-  return result.data.evaluationId;
+  const result = await requestServerApi("/api/evaluations", "POST", { ...input, existingEvaluationId });
+  if (typeof result.evaluationId !== "string") throw new Error("O servidor não retornou o identificador da avaliação.");
+  return result.evaluationId;
 }
 export async function saveEvaluationDraft(input: {
   companyId: string;

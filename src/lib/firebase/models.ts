@@ -121,7 +121,7 @@ export interface DevelopmentPlanDocument {
   leaderId: string;
   teamIds: string[];
   targetPosition: string;
-  goals: DevelopmentGoal[];
+  goals?: DevelopmentGoal[];
   status: "ACTIVE" | "PROMOTED";
   createdAt?: unknown;
   updatedAt?: unknown;
@@ -131,7 +131,7 @@ export interface PromotionEvaluationSnapshot {
   evaluationId: string;
   cycleName: string;
   score: number;
-  comment: string;
+  comment?: string;
   submittedAt?: unknown;
 }
 
@@ -149,6 +149,34 @@ export interface PromotionRequestStatusDocument {
   updatedAt?: unknown;
 }
 
+export interface PromotionResultSnapshot {
+  indicatorWeightTotal?: number;
+  competenceWeightTotal?: number;
+  indicatorTotal?: number;
+  indicatorBase?: number;
+  competenceTotal?: number;
+  baseScore?: number;
+  extraScore?: number;
+  finalScore?: number;
+  classification?: "Excelente" | "Bom" | "Regular" | "Insuficiente";
+}
+
+export interface PromotionIndicatorSnapshot {
+  id: string;
+  name: string;
+  weight: number;
+  percentage: number;
+  points: number;
+}
+
+export interface PromotionCompetencySnapshot {
+  id: string;
+  name: string;
+  weight: number;
+  score: number;
+  points: number;
+}
+
 export interface PromotionRequestDocument {
   employeeId: string;
   leaderId: string;
@@ -156,8 +184,12 @@ export interface PromotionRequestDocument {
   targetPosition: string;
   justification: string;
   averageScore: number | null;
+  evaluationEvidenceVersion?: number;
+  indicators?: PromotionIndicatorSnapshot[];
+  competencies?: PromotionCompetencySnapshot[];
+  promotionResult?: PromotionResultSnapshot | null;
   evaluations: PromotionEvaluationSnapshot[];
-  goals: DevelopmentGoal[];
+  goals?: DevelopmentGoal[];
   status: "PENDING" | "APPROVED" | "REJECTED";
   adminId?: string;
   adminNote?: string;

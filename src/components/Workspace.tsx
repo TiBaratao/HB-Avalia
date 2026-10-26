@@ -1,8 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type Dispatch, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type SetStateAction } from "react";
 import type { ReactNode } from "react";
 import type { User } from "firebase/auth";
+import {
+  calculatePromotionEvaluationPreview,
+  PROMOTION_COMPETENCIES,
+  PROMOTION_INDICATORS,
+  PROMOTION_INDICATOR_PERCENTAGE_MAX,
+  restorePromotionEvaluationInputs,
+  type PromotionCompetencyInput,
+  type PromotionEvaluationPreview,
+  type PromotionIndicatorInput,
+} from "../../functions/promotion-scoring";
 import { CompanyLogo } from "./CompanyLogo";
 import { ThemeToggle } from "./ThemeProvider";
 import {
@@ -31,11 +41,11 @@ import type {
   ChecklistAssignmentDocument,
   ChecklistTemplateDocument,
   CompanyMember,
-  DevelopmentGoal,
   DocumentWithId,
   EvaluationWithId,
   FirebaseEvaluationType,
   FirebaseRole,
+  PromotionRequestDocument,
   SurveyDocument,
   SurveyQuestion,
   SurveyResponseDocument,
@@ -43,7 +53,6 @@ import type {
 import {
   createChecklistAssignments,
   decidePromotionRequest,
-  saveDevelopmentPlan,
   submitPromotionRequest,
   createChecklistTemplate,
   deleteChecklistTemplate,
@@ -90,6 +99,25 @@ const roleNames: Record<FirebaseRole, string> = {
   LEADER: "Líder",
   EMPLOYEE: "Colaborador",
 };
+
+type PromotionIndicatorEntry = PromotionIndicatorInput["percentage"] | "";
+type PromotionCompetencyEntry = PromotionCompetencyInput["score"] | "";
+
+function promotionResultPreview(
+  indicators: Array<{ id: string; percentage: PromotionIndicatorEntry }>,
+  competencies: Array<{ id: string; score: PromotionCompetencyEntry }>,
+): PromotionEvaluationPreview | null {
+  const invalidIndicator = indicators.some((item) => item.percentage !== ""
+    && (!Number.isFinite(item.percentage) || item.percentage < 0 || item.percentage > PROMOTION_INDICATOR_PERCENTAGE_MAX));
+  const invalidCompetence = competencies.some((item) => item.score !== ""
+    && (!Number.isInteger(item.score) || item.score < 1 || item.score > 5));
+  if (invalidIndicator || invalidCompetence) return null;
+
+  return calculatePromotionEvaluationPreview(
+    indicators.filter((item) => item.percentage !== "").map((item) => ({ id: item.id, percentage: Number(item.percentage) })),
+    competencies.filter((item) => item.score !== "").map((item) => ({ id: item.id, score: Number(item.score) })),
+  );
+}
 
 export function Workspace({ user, companyId, onSignOut }: { user: User; companyId: string; onSignOut: () => void }) {
   const [data, setData] = useState<WorkspaceData | null>(null);
@@ -159,7 +187,7 @@ export function Workspace({ user, companyId, onSignOut }: { user: User; companyI
   const content = section === "overview"
     ? <Overview data={data} user={user} execute={execute} onNavigate={setSection} />
     : section === "team"
-      ? (role === "LEADER" && selectedMemberId ? <DevelopmentProfilePage key={selectedMemberId} data={data} user={user} employee={data.members.find((person) => person.uid === selectedMemberId)} execute={execute} onBack={() => setSelectedMemberId("")} /> : <TeamPage data={data} user={user} execute={execute} onOpenProfile={(employeeId) => setSelectedMemberId(employeeId)} />)
+      ? (role === "LEADER" && selectedMemberId ? <DevelopmentProfilePage key={selectedMemberId} data={data} employee={data.members.find((person) => person.uid === selectedMemberId)} execute={execute} onBack={() => setSelectedMemberId("")} /> : <TeamPage data={data} user={user} execute={execute} onOpenProfile={(employeeId) => setSelectedMemberId(employeeId)} />)
       : section === "evaluations"
         ? <EvaluationsPage data={data} user={user} refresh={refresh} execute={execute} />
         : section === "ranking"
@@ -173,7 +201,7 @@ export function Workspace({ user, companyId, onSignOut }: { user: User; companyI
             : section === "development"
               ? role === "LEADER"
                 ? (selectedMemberId
-                  ? <DevelopmentProfilePage key={selectedMemberId} data={data} user={user} employee={data.members.find((person) => person.uid === selectedMemberId)} execute={execute} onBack={() => setSelectedMemberId("")} />
+                  ? <DevelopmentProfilePage key={selectedMemberId} data={data} employee={data.members.find((person) => person.uid === selectedMemberId)} execute={execute} onBack={() => setSelectedMemberId("")} />
                   : <LeaderDevelopmentPage data={data} onOpenProfile={(employeeId) => setSelectedMemberId(employeeId)} />)
                 : role === "EMPLOYEE"
                   ? <MyDevelopmentPage data={data} user={user} />
@@ -451,20 +479,17 @@ function MemberRow({ member, teams, departments, jobTitles, editable, onOpenProf
 function LeaderDevelopmentPage({ data, onOpenProfile }: { data: WorkspaceData; onOpenProfile: (employeeId: string) => void }) {
   const employees = data.members.filter((person) => person.role === "EMPLOYEE" && person.status === "ACTIVE");
   return <>
-    <PageHeading eyebrow="DESENVOLVIMENTO DA EQUIPE" title="Planos de desenvolvimento" subtitle="Defina metas de crescimento, acompanhe o progresso e indique colaboradores que concluíram o PDI." />
+    <PageHeading eyebrow="DESENVOLVIMENTO DA EQUIPE" title="Avaliações de Promoção/PDI" subtitle="Avalie os indicadores e as competências dos colaboradores para recomendar uma promoção." />
     {data.developmentAccessAvailable === false && <div className="live-notice error" role="alert">O Firestore recusou a leitura dos dados de PDI para este perfil. Recarregue a pagina; se persistir, confira as permissoes da conta nas regras do projeto.</div>}
+    {data.restrictedPromotionHistory && <div className="live-notice" role="status">Registros antigos que incluem evidências de avaliações convencionais estão restritos à administração. As avaliações originais permanecem preservadas.</div>}
     <section className="live-panel development-panel">
       <div className="live-panel-heading"><div><span className="eyebrow">SUA EQUIPE</span><h2>{employees.length} colaborador(es)</h2></div></div>
       {employees.length ? <div className="development-member-list">{employees.map((employee) => {
         const plan = data.developmentPlans.find((item) => item.employeeId === employee.uid);
-        const completed = plan?.goals.filter((goal) => goal.completed).length ?? 0;
-        const total = plan?.goals.length ?? 0;
-        const progress = total ? Math.round(completed / total * 100) : 0;
         const latestRequest = data.promotionRequests.filter((request) => request.employeeId === employee.uid).sort((a, b) => timestampMillis(b.submittedAt) - timestampMillis(a.submittedAt))[0];
         return <article className="development-member-card" key={employee.uid}>
-          <div className="development-member-identity"><span className="live-avatar" aria-hidden="true">{initials(employee.name)}</span><div><h3>{employee.name}</h3><p>{employee.positionTitle || "Cargo atual não informado"} · {plan ? `Meta: ${plan.targetPosition}` : "Sem PDI"}</p></div></div>
-          <div className="development-member-progress"><div><b>{plan ? `${progress}%` : "—"}</b><small>{plan ? `${completed} de ${total} metas` : "PDI não iniciado"}</small></div>{plan && <div className="development-progress-track" role="progressbar" aria-label={`Progresso do PDI de ${employee.name}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><span style={{ width: `${progress}%` }}/></div>}</div>
-          <div className="development-member-status">{latestRequest?.status === "PENDING" ? <span className="status-chip pending"><Clock size={14}/> Indicação em análise</span> : latestRequest?.status === "REJECTED" ? <span className="status-chip pending"><XCircle size={14}/> Indicação reprovada</span> : plan?.status === "ACTIVE" && latestRequest?.status === "APPROVED" ? <span className="status-chip pending">PDI em andamento</span> : latestRequest?.status === "APPROVED" || plan?.status === "PROMOTED" ? <span className="status-chip done"><CheckCircle size={14}/> Promoção aprovada</span> : plan?.status === "ACTIVE" ? <span className="status-chip pending">PDI em andamento</span> : <span className="status-chip">Sem indicação</span>}</div>
+          <div className="development-member-identity"><span className="live-avatar" aria-hidden="true">{initials(employee.name)}</span><div><h3>{employee.name}</h3><p>{employee.positionTitle || "Cargo atual não informado"}{plan ? ` · Próximo cargo: ${plan.targetPosition}` : " · Sem avaliação enviada"}</p></div></div>
+          <div className="development-member-status">{latestRequest?.status === "PENDING" ? <span className="status-chip pending"><Clock size={14}/> Indicação em análise</span> : latestRequest?.status === "REJECTED" ? <span className="status-chip pending"><XCircle size={14}/> Indicação reprovada</span> : latestRequest?.status === "APPROVED" || plan?.status === "PROMOTED" ? <span className="status-chip done"><CheckCircle size={14}/> Promoção aprovada</span> : <span className="status-chip">Avaliação não enviada</span>}</div>
           <button type="button" className="button button-outline button-small" onClick={() => onOpenProfile(employee.uid)}>{plan?.status === "PROMOTED" ? "Criar outro PDI" : plan ? "Gerenciar PDI" : "Criar PDI"} <ArrowLeft className="development-open-arrow" size={15}/></button>
         </article>;
       })}</div> : <EmptyState title="Nenhum colaborador na equipe" text="Quando houver colaboradores ativos vinculados às suas equipes, você poderá criar os PDIs por aqui."/>}
@@ -474,43 +499,41 @@ function LeaderDevelopmentPage({ data, onOpenProfile }: { data: WorkspaceData; o
 
 function MyDevelopmentPage({ data, user }: { data: WorkspaceData; user: User }) {
   const plan = data.developmentPlans.find((item) => item.employeeId === user.uid);
-  const completed = plan?.goals.filter((goal) => goal.completed).length ?? 0;
-  const total = plan?.goals.length ?? 0;
-  const progress = total ? Math.round(completed / total * 100) : 0;
   return <>
-    <PageHeading eyebrow="SEU DESENVOLVIMENTO" title="Meu PDI" subtitle="Acompanhe as metas combinadas com sua liderança e seu progresso para o próximo cargo." />
+    <PageHeading eyebrow="SEU DESENVOLVIMENTO" title="Meu PDI" subtitle="Acompanhe o andamento da sua avaliação para promoção." />
     {data.developmentAccessAvailable === false && <div className="live-notice error" role="alert">O Firestore recusou a leitura dos dados de PDI para este perfil. Recarregue a pagina; se persistir, confira as permissoes da conta nas regras do projeto.</div>}
     {plan ? <section className="live-panel development-panel">
-      <div className="development-plan-summary"><div><span className="eyebrow">CARGO DESEJADO</span><h2>{plan.targetPosition}</h2><p>Cargo atual: {data.member.positionTitle || "Não informado"}</p></div>{plan.status === "PROMOTED" ? <span className="status-chip done"><CheckCircle size={15}/> Promoção aprovada</span> : <span className="status-chip pending">PDI em andamento</span>}</div>
-      <div className="development-progress-overview"><div><b>{progress}%</b><span>{completed} de {total} metas concluídas</span></div><div className="development-progress-track" role="progressbar" aria-label="Progresso do PDI" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><span style={{ width: `${progress}%` }}/></div></div>
-      <div className="development-goal-list">{plan.goals.map((goal, index) => !goal.completed ? <DevelopmentGoalCard key={goal.id} goal={goal} index={index}/> : null)}</div>
-      <CompletedDevelopmentGoals goals={plan.goals}/>
-      
-    </section> : <section className="live-panel"><EmptyState title="Seu PDI ainda não foi criado" text="Quando sua liderança definir metas de desenvolvimento, elas aparecerão nesta página."/></section>}
+      <div className="development-plan-summary"><div><span className="eyebrow">CARGO AVALIADO</span><h2>{plan.targetPosition}</h2><p>Cargo atual: {data.member.positionTitle || "Não informado"}</p></div>{plan.status === "PROMOTED" ? <span className="status-chip done"><CheckCircle size={15}/> Promoção aprovada</span> : <span className="status-chip pending">Avaliação enviada para análise</span>}</div>
+      <p className="development-inline-note">A avaliação considera indicadores de desempenho e competências preenchidos pela liderança. Para dúvidas sobre o resultado, procure sua liderança.</p>
+    </section> : <section className="live-panel"><EmptyState title="Sua avaliação ainda não foi enviada" text="Quando sua liderança iniciar uma avaliação de Promoção/PDI, o cargo desejado e o andamento aparecerão nesta página."/></section>}
   </>;
 }
 
-function DevelopmentProfilePage({ data, user, employee, execute, onBack }: { data: WorkspaceData; user: User; employee?: DocumentWithId<CompanyMember>; execute: (operation: () => Promise<unknown>, message: string) => Promise<boolean>; onBack: () => void }) {
+function DevelopmentProfilePage({ data, employee, execute, onBack }: { data: WorkspaceData; employee?: DocumentWithId<CompanyMember>; execute: (operation: () => Promise<unknown>, message: string) => Promise<boolean>; onBack: () => void }) {
   const plan = employee ? data.developmentPlans.find((item) => item.employeeId === employee.uid) : undefined;
-  const [targetPosition, setTargetPosition] = useState(plan?.targetPosition ?? "");
-  const [goals, setGoals] = useState<DevelopmentGoal[]>(() => plan?.goals.map((goal) => ({ ...goal })) ?? [makeDevelopmentGoal()]);
-  const [isEditing, setIsEditing] = useState(!plan);
-  const [isCreatingNewPlan, setIsCreatingNewPlan] = useState(false);
+  const latestSavedPromotion = employee
+    ? data.promotionRequests
+      .filter((request) => request.employeeId === employee.uid)
+      .sort((a, b) => timestampMillis(b.submittedAt) - timestampMillis(a.submittedAt))[0]
+    : undefined;
+  const [targetPosition, setTargetPosition] = useState(plan?.status === "PROMOTED" ? "" : plan?.targetPosition ?? "");
   const [justification, setJustification] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [promotionIndicators, setPromotionIndicators] = useState(() => restorePromotionEvaluationInputs().indicators);
+  const [promotionCompetencies, setPromotionCompetencies] = useState(() => restorePromotionEvaluationInputs().competencies);
   const [requesting, setRequesting] = useState(false);
+  useEffect(() => {
+    const savedInputs = restorePromotionEvaluationInputs(latestSavedPromotion);
+    setPromotionIndicators(savedInputs.indicators);
+    setPromotionCompetencies(savedInputs.competencies);
+  }, [latestSavedPromotion]);
   if (!employee) return <><button type="button" className="text-link" onClick={onBack}><ArrowLeft size={16}/> Voltar para equipe</button><EmptyState title="Colaborador não encontrado" text="Volte à equipe e selecione uma pessoa ativa."/></>;
   const profileEmployee = employee;
 
   const sharedTeamIds = profileEmployee.teamIds.filter((teamId) => data.member.teamIds.includes(teamId));
   const isOwner = sharedTeamIds.length > 0;
   const canManagePdi = isOwner && data.developmentAccessAvailable;
-  const editingLocked = plan?.status === "PROMOTED" && !isCreatingNewPlan;
-  const completedGoals = plan?.goals ?? goals;
-  const completedCount = completedGoals.filter((goal) => goal.completed).length;
   const ownRequests = data.promotionRequests.filter((request) => request.employeeId === profileEmployee.uid).sort((a, b) => timestampMillis(b.submittedAt) - timestampMillis(a.submittedAt));
   const pendingRequest = ownRequests.find((request) => request.status === "PENDING");
-  const savedGoalsComplete = Boolean(plan && plan.goals.length && plan.goals.every((goal) => goal.completed));
   const evaluationSnapshots = data.evaluations
     .filter((evaluation) => evaluation.type === "EMPLOYEE" && evaluation.evaluatedUserId === employee.uid && evaluation.status === "SUBMITTED" && typeof evaluation.averageScore === "number")
     .sort((a, b) => timestampMillis(b.submittedAt) - timestampMillis(a.submittedAt))
@@ -522,115 +545,230 @@ function DevelopmentProfilePage({ data, user, employee, execute, onBack }: { dat
       comment: evaluation.comment ?? "",
       submittedAt: evaluation.submittedAt,
     }));
-
-  function startEditing() {
-    setIsCreatingNewPlan(false);
-    setTargetPosition(plan?.targetPosition ?? "");
-    setGoals(plan?.goals.map((goal) => ({ ...goal })) ?? [makeDevelopmentGoal()]);
-    setIsEditing(true);
-  }
-
-  function startNewPlan() {
-    setTargetPosition("");
-    setGoals([makeDevelopmentGoal()]);
-    setIsCreatingNewPlan(true);
-    setIsEditing(true);
-  }
-
-  function cancelEditing() {
-    setIsCreatingNewPlan(false);
-    setTargetPosition(plan?.targetPosition ?? "");
-    setGoals(plan?.goals.map((goal) => ({ ...goal })) ?? [makeDevelopmentGoal()]);
-    setIsEditing(false);
-  }
-
-  async function savePlan() {
-    setSaving(true);
-    const saved = await execute(() => saveDevelopmentPlan({
-      companyId: data.company.id ?? "",
-      employeeId: profileEmployee.uid,
-      leaderId: user.uid,
-      teamIds: sharedTeamIds,
-      targetPosition,
-      goals,
-      createdAt: isCreatingNewPlan ? undefined : plan?.createdAt,
-    }), isCreatingNewPlan ? "Novo PDI criado com sucesso." : "PDI salvo com sucesso.");
-    if (saved) {
-      setIsEditing(false);
-      setIsCreatingNewPlan(false);
-    }
-    setSaving(false);
-  }
-  async function toggleGoalCompletion(goalId: string) {
-    if (!plan || !canManagePdi || editingLocked || pendingRequest || saving) return;
-    const updatedGoals = plan.goals.map((goal) => goal.id === goalId
-      ? { ...goal, completed: !goal.completed, completedAt: goal.completed ? null : Date.now() }
-      : goal);
-    const goal = plan.goals.find((item) => item.id === goalId);
-    if (!goal) return;
-    setSaving(true);
-    const saved = await execute(() => saveDevelopmentPlan({
-      companyId: data.company.id ?? "",
-      employeeId: profileEmployee.uid,
-      leaderId: user.uid,
-      teamIds: sharedTeamIds,
-      targetPosition: plan.targetPosition,
-      goals: updatedGoals,
-      createdAt: plan.createdAt,
-    }), goal.completed ? "Meta reaberta." : "Meta marcada como concluída.");
-    if (saved) setGoals(updatedGoals);
-    setSaving(false);
-  }
+  const promotionPreview = promotionResultPreview(promotionIndicators, promotionCompetencies);
 
   async function submitRequest() {
-    if (!plan) return;
+    if (!promotionPreview?.complete || targetPosition.trim().length < 2 || justification.trim().length < 20) return;
     setRequesting(true);
     await execute(() => submitPromotionRequest({
       companyId: data.company.id ?? "",
       employeeId: profileEmployee.uid,
+      targetPosition,
       justification,
+      indicators: promotionIndicators.map(({ id, percentage }) => ({ id, percentage: Number(percentage) })),
+      competencies: promotionCompetencies.map(({ id, score }) => ({ id, score: Number(score) })),
     }), "Indicação enviada para análise administrativa.");
     setRequesting(false);
-  }
-
-  function updateGoal(index: number, changes: Partial<DevelopmentGoal>) {
-    setGoals((current) => current.map((goal, itemIndex) => itemIndex === index ? { ...goal, ...changes } : goal));
   }
 
   return <>
     <div className="development-back-row"><button type="button" className="text-link" onClick={onBack}><ArrowLeft size={16}/> Voltar para equipe</button></div>
     <PageHeading eyebrow="PERFIL DO COLABORADOR" title={employee.name} subtitle={`${employee.email} · Cargo atual: ${employee.positionTitle || "Não informado"}`} />
     {data.developmentAccessAvailable === false && <div className="live-notice error" role="alert">O Firestore recusou a leitura dos dados de PDI para este perfil. Recarregue a página; se persistir, confira as permissões da conta nas regras do projeto.</div>}
+    {data.restrictedPromotionHistory && <div className="live-notice" role="status">Registros antigos que incluem evidências de avaliações convencionais estão restritos à administração. As avaliações originais permanecem preservadas.</div>}
     {!sharedTeamIds.length && <div className="form-alert error">Este colaborador não está mais em uma equipe compartilhada com você. O PDI fica disponível somente para liderança da equipe.</div>}
     {plan?.status === "PROMOTED" && <div className="development-approved-banner"><CheckCircle size={20}/><span><b>Promoção aprovada</b><small>O cargo do colaborador foi atualizado para {employee.positionTitle || plan.targetPosition}.</small></span></div>}
-    {plan && !isOwner && <div className="form-alert">Este PDI é gerenciado por outra liderança. Você pode acompanhar o progresso, mas não alterar metas nem enviar uma indicação.</div>}
-    {plan && !isEditing ? <section className="live-panel development-panel">
-      <div className="live-panel-heading"><div><span className="eyebrow">ACOMPANHAMENTO DO PDI</span><h2>Metas e progresso</h2></div><div className="development-progress-label">{completedCount}/{plan.goals.length} metas concluídas</div></div>
-      <div className="development-progress-overview"><div><b>{plan.goals.length ? Math.round(completedCount / plan.goals.length * 100) : 0}%</b><span>Progresso para {plan.targetPosition}</span></div><div className="development-progress-track" role="progressbar" aria-label="Progresso do PDI" aria-valuemin={0} aria-valuemax={100} aria-valuenow={plan.goals.length ? Math.round(completedCount / plan.goals.length * 100) : 0}><span style={{ width: `${plan.goals.length ? Math.round(completedCount / plan.goals.length * 100) : 0}%` }}/></div></div>
-      <div className="development-goal-list">{plan.goals.map((goal, index) => !goal.completed ? <DevelopmentGoalCard key={goal.id} goal={goal} index={index} action={canManagePdi && !editingLocked && !pendingRequest ? <button type="button" className="button button-small development-goal-toggle button-primary" disabled={saving} onClick={() => void toggleGoalCompletion(goal.id)}>Marcar como concluída</button> : undefined}/> : null)}</div>
-      <CompletedDevelopmentGoals goals={plan.goals} renderAction={canManagePdi && !editingLocked && !pendingRequest ? (goal) => <button type="button" className="button button-small development-goal-toggle button-outline" disabled={saving} onClick={() => void toggleGoalCompletion(goal.id)}>Reabrir meta</button> : undefined}/>
-      {canManagePdi && !editingLocked && !pendingRequest && <div className="development-save-row"><small>As metas e o progresso ficam visíveis ao colaborador.</small><button type="button" className="button button-outline" onClick={startEditing}>Editar metas</button></div>}
-      {plan.status === "PROMOTED" && canManagePdi && <div className="development-save-row"><small>A promoção aprovada foi mantida no histórico.</small><button type="button" className="button button-primary" onClick={startNewPlan}>Criar outro PDI</button></div>}
-    </section> : <section className="live-panel development-panel">
-      <div className="live-panel-heading"><div><span className="eyebrow">PLANO DE DESENVOLVIMENTO INDIVIDUAL</span><h2>{isCreatingNewPlan ? "Criar outro PDI" : plan ? "Editar metas do PDI" : "Criar um PDI"}</h2></div>{plan && <button type="button" className="button button-outline button-small" onClick={cancelEditing}>Cancelar</button>}</div>
-      <div className="development-editor-fields"><label>Cargo desejado<input value={targetPosition} disabled={!canManagePdi || editingLocked || Boolean(pendingRequest)} maxLength={100} placeholder="Ex.: Analista Sênior" onChange={(event) => setTargetPosition(event.target.value)}/></label></div>
-      <div className="development-goal-editor-heading"><div><h3>Metas de desenvolvimento</h3><p>Edite os títulos e critérios das metas. A conclusão é feita na tela de acompanhamento.</p></div><button type="button" className="button button-outline button-small" disabled={!canManagePdi || editingLocked || Boolean(pendingRequest) || goals.length >= 30} onClick={() => setGoals((current) => [...current, makeDevelopmentGoal()])}>Adicionar meta</button></div>
-      <div className="development-goal-editor-list">{goals.map((goal, index) => <article className="development-goal-editor" key={goal.id}><div className="development-goal-editor-fields"><label>Meta {index + 1}<input value={goal.title} disabled={!canManagePdi || editingLocked || Boolean(pendingRequest)} maxLength={120} placeholder="Ex.: Liderar um projeto do início ao fim" onChange={(event) => updateGoal(index, { title: event.target.value })}/></label><label>Como será alcançada<textarea value={goal.description} disabled={!canManagePdi || editingLocked || Boolean(pendingRequest)} maxLength={500} rows={2} placeholder="Descreva entregas, critérios ou comportamentos esperados" onChange={(event) => updateGoal(index, { description: event.target.value })}/></label></div>{canManagePdi && !editingLocked && !pendingRequest && <button type="button" className="development-remove-goal" aria-label={`Remover meta ${index + 1}`} disabled={goals.length <= 1} onClick={() => setGoals((current) => current.filter((_, itemIndex) => itemIndex !== index))}>Remover</button>}</article>)}</div>
-      {canManagePdi && !editingLocked && !pendingRequest && <div className="development-save-row"><small>Salve para publicar as alterações ao colaborador.</small><button type="button" className="button button-primary" disabled={saving} onClick={() => void savePlan()}>{saving ? "Salvando…" : isCreatingNewPlan ? "Salvar novo PDI" : plan ? "Salvar alterações" : "Salvar PDI"}</button></div>}
-    </section>}
-    {plan && <section className="live-panel development-panel">
-      <div className="live-panel-heading"><div><span className="eyebrow">INDICAÇÃO DE PROMOÇÃO</span><h2>Recomendação para a administração</h2></div></div>
+    {plan && !isOwner && <div className="form-alert">Este PDI é gerenciado por outra liderança. Você pode acompanhar a avaliação, mas não enviar uma nova indicação.</div>}
+    <section className="live-panel development-panel">
+      <div className="live-panel-heading"><div><span className="eyebrow">AVALIAÇÃO DE PROMOÇÃO/PDI</span><h2>Indicadores e competências</h2></div></div>
       {pendingRequest && <div className="promotion-status-banner"><Clock size={18}/><span><b>Indicação em análise</b><small>Enviada em {formatDateLike(pendingRequest.submittedAt)}. O andamento é restrito à liderança e à administração.</small></span></div>}
       {ownRequests.filter((request) => request.status !== "PENDING").slice(0, 2).map((request) => <div className={`promotion-status-banner ${request.status === "APPROVED" ? "is-approved" : "is-rejected"}`} key={request.id}>{request.status === "APPROVED" ? <CheckCircle size={18}/> : <XCircle size={18}/>}<span><b>{request.status === "APPROVED" ? "Indicação aprovada" : "Indicação reprovada"}</b><small>{request.adminNote || "Sem observação da administração."}</small></span></div>)}
-      {plan.status === "ACTIVE" && !pendingRequest && <>
-        {!savedGoalsComplete && <p className="development-inline-note">Conclua todas as metas na área de acompanhamento antes de liberar a indicação.</p>}
-        {savedGoalsComplete && plan.leaderId !== user.uid && <p className="development-inline-note">Edite e salve o PDI para associá-lo à sua liderança antes de enviar a indicação.</p>}
-        {savedGoalsComplete && plan.leaderId === user.uid && data.developmentAccessAvailable && <div className="promotion-request-form"><p>Todas as metas foram concluídas. Registre os motivos para a promoção; as avaliações disponíveis e o histórico das metas serão enviados junto.</p><label>Por que este colaborador está apto a progredir de cargo?<textarea value={justification} onChange={(event) => setJustification(event.target.value)} maxLength={1500} minLength={20} rows={4} placeholder="Descreva resultados, responsabilidades assumidas e sinais de prontidão para o próximo cargo."/><small>{justification.trim().length}/1.500 caracteres (mínimo 20)</small></label><div className="promotion-evidence-summary"><b>{evaluationSnapshots.length} avaliação(ões) serão anexadas</b>{evaluationSnapshots.length ? <small>Média das notas: {(evaluationSnapshots.reduce((sum, item) => sum + item.score, 0) / evaluationSnapshots.length).toFixed(2)} / 5</small> : <small>Não há avaliações concluídas para anexar no momento.</small>}</div><button type="button" className="button button-primary" disabled={requesting || justification.trim().length < 20} onClick={() => void submitRequest()}>{requesting ? "Enviando…" : "Enviar indicação para análise"}</button></div>}
-      </>}
-      {plan.status === "PROMOTED" && <p className="development-inline-note">O PDI foi concluído e a promoção foi aprovada.</p>}
-    </section>}
+      {latestSavedPromotion && <PromotionScoringSnapshot request={latestSavedPromotion}/>}
+      {!pendingRequest && canManagePdi && <PromotionRequestForm
+          targetPosition={targetPosition}
+          onTargetPositionChange={setTargetPosition}
+          justification={justification}
+          onJustificationChange={setJustification}
+          indicators={promotionIndicators}
+          onIndicatorsChange={setPromotionIndicators}
+          competencies={promotionCompetencies}
+          onCompetenciesChange={setPromotionCompetencies}
+          preview={promotionPreview}
+          evaluationCount={evaluationSnapshots.length}
+          averageEvaluationScore={evaluationSnapshots.length
+            ? evaluationSnapshots.reduce((sum, item) => sum + item.score, 0) / evaluationSnapshots.length
+            : null}
+          requesting={requesting}
+          onSubmit={() => void submitRequest()}
+        />}
+      {!pendingRequest && !canManagePdi && isOwner && <p className="development-inline-note">A avaliação não está disponível enquanto os dados de Promoção/PDI não puderem ser carregados.</p>}
+    </section>
   </>;
 }
+
+function PromotionRequestForm({
+  targetPosition,
+  onTargetPositionChange,
+  justification,
+  onJustificationChange,
+  indicators,
+  onIndicatorsChange,
+  competencies,
+  onCompetenciesChange,
+  preview,
+  evaluationCount,
+  averageEvaluationScore,
+  requesting,
+  onSubmit,
+}: {
+  targetPosition: string;
+  onTargetPositionChange: (value: string) => void;
+  justification: string;
+  onJustificationChange: (value: string) => void;
+  indicators: Array<{ id: string; percentage: PromotionIndicatorEntry }>;
+  onIndicatorsChange: Dispatch<SetStateAction<Array<{ id: string; percentage: PromotionIndicatorEntry }>>>;
+  competencies: Array<{ id: string; score: PromotionCompetencyEntry }>;
+  onCompetenciesChange: Dispatch<SetStateAction<Array<{ id: string; score: PromotionCompetencyEntry }>>>;
+  preview: PromotionEvaluationPreview | null;
+  evaluationCount: number;
+  averageEvaluationScore: number | null;
+  requesting: boolean;
+  onSubmit: () => void;
+}) {
+  const readyToSubmit = Boolean(preview?.complete)
+    && targetPosition.trim().length >= 2
+    && targetPosition.trim().length <= 100
+    && justification.trim().length >= 20
+    && !requesting;
+  const formatPoints = (points?: number) => points === undefined
+    ? "—"
+    : `${points.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })} p.p.`;
+
+  return <div className="promotion-request-form">
+    <p>Preencha a avaliação de Promoção/PDI. O percentual representa o atingimento da meta, não o valor bruto do indicador.</p>
+    <label>Cargo desejado
+      <input value={targetPosition} onChange={(event) => onTargetPositionChange(event.target.value)} maxLength={100} minLength={2} placeholder="Ex.: Analista Sênior"/>
+      <small>Informe o cargo para o qual o colaborador está sendo avaliado.</small>
+    </label>
+    <label>Por que este colaborador está apto a progredir de cargo?
+      <textarea value={justification} onChange={(event) => onJustificationChange(event.target.value)} maxLength={1500} minLength={20} rows={4} placeholder="Descreva resultados, responsabilidades assumidas e sinais de prontidão para o próximo cargo."/>
+      <small>{justification.trim().length}/1.500 caracteres (mínimo 20)</small>
+    </label>
+    <div className="promotion-score-form">
+      <section className="promotion-review-panel promotion-scoring-section">
+        <div className="promotion-scoring-heading"><h4>Seção A — Indicadores</h4><span>Peso total: 80%</span></div>
+        <div className="promotion-indicator-list">
+          {PROMOTION_INDICATORS.map((definition) => {
+            const entry = indicators.find((item) => item.id === definition.id);
+            const points = preview?.indicators.find((item) => item.id === definition.id)?.points;
+            return <div className="promotion-indicator-row" key={definition.id}>
+              <div className="promotion-indicator-name"><b>{definition.name}</b><span>Peso {definition.weight}%</span></div>
+              <label className="promotion-score-input">Atingimento (%)
+                <input
+                  aria-label={`Percentual de atingimento: ${definition.name}`}
+                  type="number"
+                  min={0}
+                  max={PROMOTION_INDICATOR_PERCENTAGE_MAX}
+                  step="any"
+                  inputMode="decimal"
+                  value={entry?.percentage ?? ""}
+                  aria-invalid={entry?.percentage !== "" && entry?.percentage !== undefined && (entry.percentage < 0 || entry.percentage > PROMOTION_INDICATOR_PERCENTAGE_MAX)}
+                  onChange={(event) => {
+                    const rawValue = event.target.value;
+                    if (rawValue !== "" && Number(rawValue) > PROMOTION_INDICATOR_PERCENTAGE_MAX) return;
+                    const value = rawValue === "" ? "" : Number(rawValue);
+                    onIndicatorsChange((current) => current.map((item) => item.id === definition.id ? { ...item, percentage: value } : item));
+                  }}
+                />
+              </label>
+              <div className="promotion-item-points"><small>Pontos obtidos</small><b>{formatPoints(points)}</b></div>
+            </div>;
+          })}
+        </div>
+        <div className="promotion-subtotal"><span>Subtotal Indicadores (80%)</span><b>{formatPoints(preview?.indicatorTotal)}</b></div>
+      </section>
+      <section className="promotion-review-panel promotion-scoring-section">
+        <div className="promotion-scoring-heading"><h4>Seção B — Competências</h4><span>Peso total: 40%</span></div>
+        <div className="promotion-competency-list">
+          {PROMOTION_COMPETENCIES.map((definition) => {
+            const entry = competencies.find((item) => item.id === definition.id);
+            const points = preview?.competencies.find((item) => item.id === definition.id)?.points;
+            return <div className="promotion-indicator-row" key={definition.id}>
+              <div className="promotion-indicator-name"><b>{definition.name}</b><span>Peso individual: {definition.weight}%</span></div>
+              <label className="promotion-score-input">Nota (1 a 5)
+                <input
+                  aria-label={`Nota da competência: ${definition.name}`}
+                  type="number"
+                  min={1}
+                  max={5}
+                  step={1}
+                  value={entry?.score ?? ""}
+                  aria-invalid={entry?.score !== "" && entry?.score !== undefined && (!Number.isInteger(entry.score) || entry.score < 1 || entry.score > 5)}
+                  onChange={(event) => {
+                    const value = event.target.value === "" ? "" : Number(event.target.value);
+                    onCompetenciesChange((current) => current.map((item) => item.id === definition.id ? { ...item, score: value } : item));
+                  }}
+                />
+              </label>
+              <div className="promotion-item-points"><small>Pontos obtidos</small><b>{formatPoints(points)}</b></div>
+            </div>;
+          })}
+        </div>
+        <div className="promotion-pending-competency"><span>Nova competência (preencher)</span><small>Pendente de definição; não integra o cálculo.</small></div>
+        <div className="promotion-subtotal"><span>Subtotal Competências (40%)</span><b>{formatPoints(preview?.competenceTotal)}</b></div>
+      </section>
+      <section className="promotion-result-panel" aria-live="polite">
+        <h4>Resultado da avaliação</h4>
+        <div className="promotion-result-grid">
+          <div><span>Subtotal dos indicadores — Seção A</span><b>{formatPoints(preview?.indicatorTotal)}</b></div>
+          <div><span>Base dos indicadores (limite 60 p.p.)</span><b>{formatPoints(preview?.indicatorBase)}</b></div>
+          <div><span>Extra por superação</span><b>{formatPoints(preview?.extraScore)}</b></div>
+          <div><span>Subtotal das competências — Seção B</span><b>{formatPoints(preview?.competenceTotal)}</b></div>
+          <div><span>Resultado-base</span><b>{formatPoints(preview?.baseScore)}</b></div>
+          <div className="promotion-final-result"><span>Resultado final</span><b>{formatPoints(preview?.finalScore)}</b></div>
+          <div><span>Classificação final</span><b>{preview?.classification ?? "—"}</b></div>
+        </div>
+        {!preview?.complete && <p className="promotion-validation-note">Preencha os oito percentuais entre 0 e 100 e as cinco notas inteiras entre 1 e 5 para concluir a avaliação. Os subtotais e pontos preenchidos são atualizados automaticamente.</p>}
+      </section>
+    </div>
+    <div className="promotion-evidence-summary">
+      <b>{evaluationCount} avaliação(ões) convencionais serão anexadas como histórico</b>
+      {averageEvaluationScore === null
+        ? <small>Não há avaliações convencionais concluídas para anexar no momento.</small>
+        : <small>Média histórica das notas: {averageEvaluationScore.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / 5. Esta média não participa do cálculo de promoção.</small>}
+    </div>
+    <button type="button" className="button button-primary" disabled={!readyToSubmit} onClick={onSubmit}>
+      {requesting ? "Enviando…" : "Enviar indicação para análise"}
+    </button>
+  </div>;
+}
+
+function PromotionScoringSnapshot({ request }: { request: PromotionRequestDocument }) {
+  const result = request.promotionResult;
+  if (!result) {
+    return <p className="promotion-legacy-score-note">Registro anterior à avaliação ponderada; não há respostas do modelo novo salvas.</p>;
+  }
+  const formatPoints = (points?: number) => points === undefined
+    ? "—"
+    : `${points.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })} p.p.`;
+
+  return <section className="promotion-saved-scoring" aria-label="Resultados salvos da avaliação de promoção">
+    <div className="promotion-score-summary">
+      <div><span>Subtotal dos indicadores</span><b>{formatPoints(result.indicatorTotal)}</b></div>
+      <div><span>Base dos indicadores</span><b>{formatPoints(result.indicatorBase)}</b></div>
+      <div><span>Extra por superação</span><b>{formatPoints(result.extraScore)}</b></div>
+      <div><span>Subtotal Competências (40%)</span><b>{formatPoints(result.competenceTotal)}</b></div>
+      <div><span>Resultado-base</span><b>{formatPoints(result.baseScore)}</b></div>
+      <div><span>Resultado final</span><b>{formatPoints(result.finalScore)}</b></div>
+      <div><span>Classificação</span><b>{result.classification ?? "Sem classificação"}</b></div>
+    </div>
+    <div className="promotion-saved-sections">
+      <section className="promotion-review-panel">
+        <h4>Seção A — Indicadores</h4>
+        {request.indicators?.length
+          ? <ul>{request.indicators.map((item) => <li key={item.id}><span><b>{item.name}</b><small>Peso {item.weight}% · Atingimento {item.percentage}% · {formatPoints(item.points)}</small></span></li>)}</ul>
+          : <p className="promotion-legacy-score-note">Respostas de indicadores não disponíveis neste registro.</p>}
+      </section>
+      <section className="promotion-review-panel">
+        <h4>Seção B — Competências</h4>
+        {request.competencies?.length
+          ? <ul>{request.competencies.map((item) => <li key={item.id}><span><b>{item.name}</b><small>Peso {item.weight}% · Nota {item.score}/5 · {formatPoints(item.points)}</small></span></li>)}</ul>
+          : <p className="promotion-legacy-score-note">Respostas de competências não disponíveis neste registro.</p>}
+      </section>
+    </div>
+  </section>;
+}
+
 function PromotionRequestsPage({ data, execute }: { data: WorkspaceData; execute: (operation: () => Promise<unknown>, message: string) => Promise<boolean> }) {
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [expandedRequests, setExpandedRequests] = useState<Record<string, boolean>>({});
@@ -651,7 +789,7 @@ function PromotionRequestsPage({ data, execute }: { data: WorkspaceData; execute
   });
   const hasFilters = Boolean(term || statusFilter);
   return <>
-    <PageHeading eyebrow="ADMINISTRAÇÃO" title="Indicações de promoção" subtitle="Analise a justificativa da liderança, os resultados e a conclusão das metas antes de decidir." />
+    <PageHeading eyebrow="ADMINISTRAÇÃO" title="Indicações de promoção" subtitle="Analise a avaliação por indicadores e competências antes de decidir." />
     {data.developmentAccessAvailable === false && <div className="live-notice error" role="alert">O Firestore recusou a leitura dos dados de PDI para este perfil. Recarregue a pagina; se persistir, confira as permissoes da conta nas regras do projeto.</div>}
     <section className="live-panel development-panel">
       <div className="live-panel-heading"><div><span className="eyebrow">FILA DE ANÁLISE</span><h2>{pendingCount} pendente(s) · {allRequests.length} no histórico</h2></div></div>
@@ -674,42 +812,20 @@ function PromotionRequestsPage({ data, execute }: { data: WorkspaceData; execute
           </header>
           {expanded && <div className="promotion-request-expanded" id={"promotion-details-" + request.id}>
             <p className="promotion-request-context">Indicado por {leader?.name ?? "Liderança"} · Enviado em {formatDateLike(request.submittedAt)}</p>
-            <div className="promotion-request-details"><div><span>Cargo atual</span><b>{employee?.positionTitle || "Não informado"}</b></div><div><span>Nota média anexada</span><b>{request.averageScore === null ? "Sem avaliações" : request.averageScore.toFixed(2) + " / 5"}</b></div><div><span>Metas concluídas</span><b>{request.goals.filter((goal) => goal.completed).length} / {request.goals.length}</b></div></div>
+            <div className="promotion-request-details"><div><span>Cargo atual</span><b>{employee?.positionTitle || "Não informado"}</b></div><div><span>Nota média anexada</span><b>{request.averageScore === null ? "Sem avaliações" : request.averageScore.toFixed(2) + " / 5"}</b></div><div><span>Resultado de promoção</span><b>{request.promotionResult ? `${request.promotionResult.finalScore?.toFixed(2) ?? "0.00"} · ${request.promotionResult.classification ?? "Sem classificação"}` : "Sem cálculo"}</b></div></div>
+            <PromotionScoringSnapshot request={request}/>
             <div className="promotion-review-content">
               <section className="promotion-review-panel promotion-justification"><h4>Justificativa da liderança</h4><p>{request.justification}</p></section>
               <div className="promotion-evidence-grid">
-                <section className="promotion-review-panel promotion-evidence promotion-goal-evidence"><h4>Metas do PDI <span>{request.goals.filter((goal) => goal.completed).length}/{request.goals.length} concluídas</span></h4><details className="promotion-completed-details"><summary>Ver metas concluídas</summary><ul>{request.goals.filter((goal) => goal.completed).map((goal) => <li key={goal.id}><CheckCircle size={16}/><span><b>{goal.title}</b>{goal.description && <small>{goal.description}</small>}</span></li>)}</ul></details></section>
-                <section className="promotion-review-panel promotion-evidence promotion-evaluation-evidence"><h4>Avaliações anexadas <span>{request.evaluations.length}</span></h4>{request.evaluations.length ? <ul>{request.evaluations.map((evaluation) => <li key={evaluation.evaluationId}><ChartBar size={16}/><span><b>{evaluation.cycleName} · {evaluation.score.toFixed(2)} / 5</b>{evaluation.comment && <small>{evaluation.comment}</small>}</span></li>)}</ul> : <p className="development-inline-note">Nenhuma avaliação concluída foi anexada.</p>}</section>
+                <section className="promotion-review-panel promotion-evidence promotion-evaluation-evidence"><h4>Avaliações convencionais <span>{request.evaluations.length}</span></h4>{request.evaluations.length ? <ul>{request.evaluations.map((evaluation) => <li key={evaluation.evaluationId}><ChartBar size={16}/><span><b>{evaluation.cycleName} · {evaluation.score.toFixed(2)} / 5</b>{evaluation.comment && <small>{evaluation.comment}</small>}</span></li>)}</ul> : <p className="development-inline-note">As avaliações convencionais permanecem nos respectivos registros e não são copiadas para esta indicação.</p>}</section>
               </div>
             </div>
             {request.status === "PENDING" ? <div className="promotion-review-actions"><label>Observação para a decisão<textarea value={notes[request.id] ?? ""} onChange={(event) => setNotes((current) => ({ ...current, [request.id]: event.target.value }))} maxLength={1000} rows={2} placeholder="Opcional; até 1.000 caracteres"/></label><div><button type="button" className="button button-outline" disabled={!data.developmentAccessAvailable} onClick={() => void execute(() => decidePromotionRequest({ companyId: data.company.id ?? "", requestId: request.id, decision: "REJECTED", adminNote: notes[request.id] ?? "" }), "Indicação reprovada.")}>Reprovar</button><button type="button" className="button button-primary" disabled={!data.developmentAccessAvailable} onClick={() => void execute(() => decidePromotionRequest({ companyId: data.company.id ?? "", requestId: request.id, decision: "APPROVED", adminNote: notes[request.id] ?? "" }), "Indicação aprovada e cargo atualizado.")}>Aprovar promoção</button></div></div> : <div className="promotion-decision-note"><b>{request.status === "APPROVED" ? "Aprovada" : "Reprovada"} em {formatDateLike(request.decidedAt)}</b><p>{request.adminNote || "Sem observação registrada."}</p></div>}
           </div>}
         </article>;
-      })}</div> : hasFilters ? <EmptyState title="Nenhuma indicação encontrada" text="Ajuste a busca ou a situação para ver outras indicações."/> : <EmptyState title="Nenhuma indicação recebida" text="Quando a liderança enviar uma recomendação após concluir o PDI, ela será exibida aqui com os resultados e as metas."/>}
+      })}</div> : hasFilters ? <EmptyState title="Nenhuma indicação encontrada" text="Ajuste a busca ou a situação para ver outras indicações."/> : <EmptyState title="Nenhuma indicação recebida" text="Quando a liderança enviar uma avaliação de Promoção/PDI, ela será exibida aqui com os resultados para análise."/>}
     </section>
   </>;
-}
-
-function DevelopmentGoalCard({ goal, index, action }: { goal: DevelopmentGoal; index: number; action?: ReactNode }) {
-  return <article className={"development-goal-card " + (goal.completed ? "is-complete" : "")}>
-    <span className="development-goal-number">{goal.completed ? <CheckCircle size={20} weight="fill"/> : String(index + 1).padStart(2, "0")}</span>
-    <div><h3>{goal.title}</h3>{goal.description && <p>{goal.description}</p>}</div>
-    {goal.completed && <span className="development-goal-done">{goal.completedAt ? "Concluída · " + formatDateLike(goal.completedAt) : "Concluída"}</span>}
-    {action}
-  </article>;
-}
-
-function CompletedDevelopmentGoals({ goals, renderAction }: { goals: DevelopmentGoal[]; renderAction?: (goal: DevelopmentGoal, index: number) => ReactNode }) {
-  const completed = goals.map((goal, index) => ({ goal, index })).filter(({ goal }) => goal.completed);
-  if (!completed.length) return null;
-  return <details className="development-completed-group">
-    <summary><span>Metas concluídas</span><span className="development-completed-count">{completed.length}</span></summary>
-    <div className="development-completed-list">{completed.map(({ goal, index }) => <DevelopmentGoalCard key={goal.id} goal={goal} index={index} action={renderAction?.(goal, index)}/>)}</div>
-  </details>;
-}
-
-function makeDevelopmentGoal(): DevelopmentGoal {
-  return { id: typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `goal-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, title: "", description: "", completed: false, completedAt: null };
 }
 
 function timestampMillis(value: unknown): number {

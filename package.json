@@ -1,38 +1,41 @@
 {
-    "name":  "hb-avalia",
-    "version":  "0.1.0",
-    "private":  true,
-    "scripts":  {
-                    "start":  "next start",
-                    "test:rules":  "firebase emulators:exec --only firestore --project demo-hb-avalia \"node --test tests/firestore.rules.test.mjs\"",
-                    "build":  "next build",
-                    "lint":  "eslint src functions tests",
-                    "typecheck":  "tsc --noEmit",
-                    "deploy:firebase":  "firebase deploy --only functions,firestore:rules,firestore:indexes --project hb-avalia",
-                    "test":  "node --test functions/test/domain.test.js",
-                    "check":  "npm run typecheck \u0026\u0026 npm run lint \u0026\u0026 npm test \u0026\u0026 npm run test:rules",
-                    "dev":  "next dev"
-                },
-    "dependencies":  {
-                         "@phosphor-icons/react":  "^2.1.10",
-                         "firebase":  "^12.19.0",
-                         "framer-motion":  "^14.0.0",
-                         "next":  "^15.5.4",
-                         "react":  "^19.1.1",
-                         "react-dom":  "^19.1.1"
-                     },
-    "devDependencies":  {
-                            "@firebase/rules-unit-testing":  "^5.0.2",
-                            "@types/node":  "^22.15.30",
-                            "@types/react":  "^19.1.13",
-                            "@types/react-dom":  "^19.1.9",
-                            "eslint":  "^8.57.1",
-                            "eslint-config-next":  "^15.5.28",
-                            "typescript":  "^5.9.2"
-                        },
-    "overrides":  {
-                      "next":  {
-                                   "postcss":  "8.5.30"
-                               }
-                  }
+    "name": "hb-avalia",
+    "version": "0.1.0",
+    "private": true,
+    "scripts": {
+        "start": "next start",
+        "test:rules": "firebase emulators:exec --only firestore --project demo-hb-avalia \"node --test tests/firestore.rules.test.mjs\"",
+        "test:server-actions": "firebase emulators:exec --only firestore --project demo-hb-avalia \"node --test functions/test/secure-actions-emulator.test.js\"",
+        "build": "next build",
+        "lint": "eslint src functions tests",
+        "typecheck": "tsc --noEmit",
+        "deploy:firebase": "firebase deploy --only functions,firestore:rules,firestore:indexes --project hb-avalia",
+        "test": "node --test functions/test/domain.test.js functions/test/scheduled-checklists.test.js",
+        "check": "npm run typecheck && npm run lint && npm test && npm run test:rules",
+        "dev": "next dev"
+    },
+    "dependencies": {
+        "@phosphor-icons/react": "^2.1.10",
+        "firebase": "^12.19.0",
+        "firebase-admin": "^14.5.0",
+        "framer-motion": "^14.0.0",
+        "next": "^15.5.4",
+        "react": "^19.1.1",
+        "react-dom": "^19.1.1"
+    },
+    "devDependencies": {
+        "@firebase/rules-unit-testing": "^5.0.2",
+        "@types/node": "^22.15.30",
+        "@types/react": "^19.1.13",
+        "@types/react-dom": "^19.1.9",
+        "eslint": "^8.57.1",
+        "eslint-config-next": "^15.5.28",
+        "typescript": "^5.9.2"
+    },
+    "overrides": {
+        "@grpc/grpc-js": "^1.14.6",
+        "next": {
+            "postcss": "8.5.30"
+        }
+    }
 }

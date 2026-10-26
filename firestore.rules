@@ -483,11 +483,20 @@ service cloud.firestore {
         allow get: if isAdmin(companyId)
           || (isLeader(companyId)
             && targetHasRole(companyId, resource.data.employeeId, 'EMPLOYEE')
-            && sharesTeam(companyId, resource.data.employeeId));
+            && sharesTeam(companyId, resource.data.employeeId)
+            && resource.data.evaluationEvidenceVersion == 2
+            && resource.data.averageScore == null
+            && resource.data.evaluations is list
+            && resource.data.evaluations.size() == 0);
         allow list: if isAdmin(companyId);
         allow create: if false;
         allow update: if false;
         allow delete: if false;
+
+        match /evaluationEvidence/{evaluationId} {
+          allow get, list: if isAdmin(companyId);
+          allow create, update, delete: if false;
+        }
       }
       match /promotionStatuses/{employeeId} {
         allow get: if isAdmin(companyId)
