@@ -10,7 +10,7 @@ This setup starts with an empty Firebase project. It does not copy users, UIDs, 
 
 ## Netlify site and environment
 
-1. Import this GitHub repository as a Netlify site. Use `npm run build` and allow Netlify to detect the Next.js framework. `netlify.toml` selects Node.js 22 for the build and `nodejs22.x` for the function runtime. Do not configure `.next` as a static-only publish directory.
+1. Import this GitHub repository as a Netlify site. Use `npm run build` and allow Netlify to detect the Next.js framework. `netlify.toml` selects Node.js 24 for the build and `nodejs24.x` for the function runtime. Do not configure `.next` as a static-only publish directory.
 2. Set these variables in Netlify. The Firebase web configuration values are public client configuration; the service-account JSON is secret and must never use a `NEXT_PUBLIC_` name.
    - `NEXT_PUBLIC_FIREBASE_API_KEY`
    - `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
