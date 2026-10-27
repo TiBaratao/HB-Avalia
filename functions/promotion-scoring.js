@@ -83,7 +83,11 @@ function calculatePromotionEvaluationPreview(indicators = [], competencies = [])
       if (!Number.isFinite(item.percentage) || item.percentage < 0 || item.percentage > PROMOTION_INDICATOR_PERCENTAGE_MAX) {
         throw new Error(`O percentual de "${definition.name}" deve estar entre 0% e ${PROMOTION_INDICATOR_PERCENTAGE_MAX}%.`);
       }
-      const points = round(definition.weight * (item.percentage / 100));
+      let effectivePercentage = item.percentage;
+      if (definition.id === "sector-loss") {
+        effectivePercentage = Math.max(0, PROMOTION_INDICATOR_PERCENTAGE_MAX - item.percentage);
+      }
+      const points = round(definition.weight * (effectivePercentage / 100));
       return [{
         id: definition.id,
         name: definition.name,

@@ -453,7 +453,7 @@ function TeamPage({ data, user, execute, onOpenProfile }: { data: WorkspaceData;
         {admin && <label className="filter-field">Status<select className="filter-input" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "" | "ACTIVE" | "INACTIVE")}><option value="">Todos os status</option><option value="ACTIVE">Ativa</option><option value="INACTIVE">Inativa</option></select></label>}
         {hasFilters && <button type="button" className="ranking-filter-reset" onClick={() => { setSearch(""); setRoleFilter(""); setStatusFilter(""); }}>Limpar filtros</button>}
       </div>
-      {people.length ? <div className="live-table-wrap"><table className="live-table"><thead><tr><th>Pessoa</th><th>Cargo atual</th><th>Perfil</th><th>Setor / equipe(s)</th><th>Status</th>{admin && <th>Ação</th>}{!admin && data.member.role === "LEADER" && <th>PDI</th>}</tr></thead><tbody>{people.map((member) => <MemberRow key={member.uid} member={member} teams={data.teams} departments={data.departments} jobTitles={jobTitles} editable={admin && member.uid !== user.uid} onOpenProfile={data.member.role === "LEADER" && member.role === "EMPLOYEE" ? () => onOpenProfile(member.uid) : undefined} onSave={(changes) => execute(() => updateMember(data.company.id ?? "", member, changes), "Perfil atualizado.")} onRemove={admin && member.uid !== user.uid ? () => execute(() => removeMember(data.company.id ?? "", member.uid, member.teamIds), "Pessoa removida da empresa.") : undefined}/>)}</tbody></table></div> : hasFilters ? <EmptyState title="Nenhuma pessoa encontrada" text="Ajuste a busca ou os filtros para ver outras pessoas."/> : <EmptyState title="A equipe ainda está vazia" text={admin ? "As pessoas que se cadastrarem na empresa aparecerão aqui para você definir função e equipes." : "A administração ainda não adicionou pessoas às suas equipes."}/>}
+      {people.length ? <div className="live-table-wrap"><table className="live-table"><thead><tr><th>Pessoa</th><th>Cargo atual</th><th>Perfil</th><th>Setor / equipe(s)</th><th>Status</th>{admin && <th>Ação</th>}{!admin && data.member.role === "LEADER" && <th>PDI</th>}</tr></thead><tbody>{people.map((member) => <MemberRow key={member.uid} member={member} teams={data.teams} departments={data.departments} jobTitles={jobTitles} editable={admin && member.uid !== user.uid} onOpenProfile={(admin || (data.member.role === "LEADER" && member.role === "EMPLOYEE")) ? () => onOpenProfile(member.uid) : undefined} onSave={(changes) => execute(() => updateMember(data.company.id ?? "", member, changes), "Perfil atualizado.")} onRemove={admin && member.uid !== user.uid ? () => execute(() => removeMember(data.company.id ?? "", member.uid, member.teamIds), "Pessoa removida da empresa.") : undefined}/>)}</tbody></table></div> : hasFilters ? <EmptyState title="Nenhuma pessoa encontrada" text="Ajuste a busca ou os filtros para ver outras pessoas."/> : <EmptyState title="A equipe ainda está vazia" text={admin ? "As pessoas que se cadastrarem na empresa aparecerão aqui para você definir função e equipes." : "A administração ainda não adicionou pessoas às suas equipes."}/>}
     </section>
   </>;
 }
@@ -573,6 +573,7 @@ function DevelopmentProfilePage({ data, employee, execute, onBack }: { data: Wor
       <div className="live-panel-heading"><div><span className="eyebrow">AVALIAÇÃO DE PROMOÇÃO/PDI</span><h2>Indicadores e competências</h2></div></div>
       {pendingRequest && <div className="promotion-status-banner"><Clock size={18}/><span><b>Indicação em análise</b><small>Enviada em {formatDateLike(pendingRequest.submittedAt)}. O andamento é restrito à liderança e à administração.</small></span></div>}
       {ownRequests.filter((request) => request.status !== "PENDING").slice(0, 2).map((request) => <div className={`promotion-status-banner ${request.status === "APPROVED" ? "is-approved" : "is-rejected"}`} key={request.id}>{request.status === "APPROVED" ? <CheckCircle size={18}/> : <XCircle size={18}/>}<span><b>{request.status === "APPROVED" ? "Indicação aprovada" : "Indicação reprovada"}</b><small>{request.adminNote || "Sem observação da administração."}</small></span></div>)}
+      {plan?.status === "PROMOTED" && !pendingRequest && canManagePdi && <div className="form-alert"><b>Nova indicação para promoção</b><p>Este colaborador já foi promovido anteriormente. Para indicar uma nova promoção (para um cargo ainda mais alto), preencha o novo cargo desejado (diferente do cargo atual), a justificativa e a avaliação abaixo.</p></div>}
       {latestSavedPromotion && <PromotionScoringSnapshot request={latestSavedPromotion}/>}
       {!pendingRequest && canManagePdi && <PromotionRequestForm
           targetPosition={targetPosition}
@@ -670,6 +671,7 @@ function PromotionRequestForm({
                     onIndicatorsChange((current) => current.map((item) => item.id === definition.id ? { ...item, percentage: value } : item));
                   }}
                 />
+                {definition.id === "sector-loss" && <small style={{color: 'var(--muted)', fontSize: '10px'}}>Quanto maior, menor o aproveitamento</small>}
               </label>
               <div className="promotion-item-points"><small>Pontos obtidos</small><b>{formatPoints(points)}</b></div>
             </div>;
@@ -683,23 +685,28 @@ function PromotionRequestForm({
           {PROMOTION_COMPETENCIES.map((definition) => {
             const entry = competencies.find((item) => item.id === definition.id);
             const points = preview?.competencies.find((item) => item.id === definition.id)?.points;
+            const currentScore = entry?.score;
             return <div className="promotion-indicator-row" key={definition.id}>
               <div className="promotion-indicator-name"><b>{definition.name}</b><span>Peso individual: {definition.weight}%</span></div>
-              <label className="promotion-score-input">Nota (1 a 5)
-                <input
-                  aria-label={`Nota da competência: ${definition.name}`}
-                  type="number"
-                  min={1}
-                  max={5}
-                  step={1}
-                  value={entry?.score ?? ""}
-                  aria-invalid={entry?.score !== "" && entry?.score !== undefined && (!Number.isInteger(entry.score) || entry.score < 1 || entry.score > 5)}
-                  onChange={(event) => {
-                    const value = event.target.value === "" ? "" : Number(event.target.value);
-                    onCompetenciesChange((current) => current.map((item) => item.id === definition.id ? { ...item, score: value } : item));
-                  }}
-                />
-              </label>
+              <div className="promotion-competency-scale">
+                <span className="promotion-competency-scale-label">Nota</span>
+                <div className="promotion-competency-options" role="radiogroup" aria-label={`Nota da competência: ${definition.name}`}>
+                  {[1, 2, 3, 4, 5].map((scoreValue) => (
+                    <button
+                      key={scoreValue}
+                      type="button"
+                      role="radio"
+                      aria-checked={currentScore === scoreValue}
+                      className={"promotion-competency-option" + (currentScore === scoreValue ? " is-selected" : "")}
+                      onClick={() => {
+                        onCompetenciesChange((current) => current.map((item) => item.id === definition.id ? { ...item, score: scoreValue } : item));
+                      }}
+                    >
+                      {scoreValue}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="promotion-item-points"><small>Pontos obtidos</small><b>{formatPoints(points)}</b></div>
             </div>;
           })}

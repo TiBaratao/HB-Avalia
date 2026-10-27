@@ -146,6 +146,7 @@ export async function createCompanyForAdmin(input: {
     role: "ADMIN" satisfies FirebaseRole,
     status: "ACTIVE",
     teamIds: [],
+    positionTitle: "Atendente de Açougue Junior",
     createdAt: serverTimestamp(),
   });
   batch.set(userProfileDocument(input.uid), {
@@ -172,6 +173,7 @@ export async function selfEnrollInCompany(input: {
     role: "EMPLOYEE" satisfies FirebaseRole,
     status: "ACTIVE",
     teamIds: [],
+    positionTitle: "Atendente de Açougue Junior",
     createdAt: serverTimestamp(),
   });
   batch.set(userProfileDocument(input.uid), {
@@ -283,7 +285,7 @@ export async function loadWorkspaceData(companyId: string, uid: string): Promise
   const assignments = assignmentSnapshots.flatMap(withIds<ChecklistAssignmentDocument>);
   const today = localDateString();
   const uniqueAssignments = [...new Map(assignments.map((item) => [item.id, item])).values()]
-    .filter((assignment) => !assignment.scheduledFor || assignment.scheduledFor <= today);
+    .filter((assignment) => member.role === "ADMIN" || !assignment.scheduledFor || assignment.scheduledFor <= today);
   const resultPairs = await Promise.all(uniqueAssignments.map(async (assignment) => {
     const snapshot = await withAccessContext("Leitura dos resultados do checklist", getDocs(collection(
       db,

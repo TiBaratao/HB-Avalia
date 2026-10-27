@@ -66,7 +66,7 @@ export function AccountSetup({ user, onDone }: { user: User; onDone: () => void 
           <label>Nome da empresa <small>(preencha somente na primeira configuração)</small>
             <input value={companyName} minLength={2} maxLength={100} onChange={(event) => setCompanyName(event.target.value)} placeholder="Nome real da empresa" />
           </label>
-          <p className="auth-footnote">A primeira conta que configurar a empresa será administradora. As próximas entrarão como colaboradoras; uma administradora poderá alterar suas funções e equipes.</p>
+          <p className="auth-footnote">A primeira conta que configurar a empresa será administradora. As próximas entrarão como colaboradoras; uma administradora poderá alterar suas funções, equipes e cargo. Todo colaborador inicia com cargo <b>Atendente de Açougue Junior</b>.</p>
           {error && <p className="form-alert error" role="alert">{error}</p>}
           <button className="button button-primary auth-submit" type="submit" disabled={busy}>
             {busy ? "Configurando…" : "Entrar na empresa"}
