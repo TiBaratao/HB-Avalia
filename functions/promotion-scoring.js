@@ -83,6 +83,8 @@ function calculatePromotionEvaluationPreview(indicators = [], competencies = [])
       if (!Number.isFinite(item.percentage) || item.percentage < 0 || item.percentage > PROMOTION_INDICATOR_PERCENTAGE_MAX) {
         throw new Error(`O percentual de "${definition.name}" deve estar entre 0% e ${PROMOTION_INDICATOR_PERCENTAGE_MAX}%.`);
       }
+      // "Perda do setor" is captured as a loss percentage (lower is better), so it is
+      // converted into an attainment percentage before the weighted score is applied.
       let effectivePercentage = item.percentage;
       if (definition.id === "sector-loss") {
         effectivePercentage = Math.max(0, PROMOTION_INDICATOR_PERCENTAGE_MAX - item.percentage);

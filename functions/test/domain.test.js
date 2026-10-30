@@ -183,7 +183,11 @@ test("promotion model uses the official PDI names and fixed section weights", ()
 });
 
 test("promotion scoring calculates zero, full attainment, extra above the indicator base, and decimals", () => {
-  const indicatorsAt = (percentage) => PROMOTION_INDICATORS.map(({ id }) => ({ id, percentage }));
+  // "Perda do setor" is entered as a loss percentage, so 100% attainment means 0% loss.
+  const indicatorsAt = (percentage) => PROMOTION_INDICATORS.map(({ id }) => ({
+    id,
+    percentage: id === "sector-loss" ? 100 - percentage : percentage,
+  }));
   const competenciesAt = (score) => PROMOTION_COMPETENCIES.map(({ id }) => ({ id, score }));
 
   const zero = calculatePromotionEvaluationResult(indicatorsAt(0), competenciesAt(1));
@@ -211,13 +215,34 @@ test("promotion scoring calculates zero, full attainment, extra above the indica
   assert.ok(extra.finalScore > 100);
 
   const decimal = calculatePromotionEvaluationResult(
-    PROMOTION_INDICATORS.map(({ id }, index) => ({ id, percentage: index === 0 ? 87.5 : index === 1 ? 0.01 : 0 })),
+    // 87.5% attainment on indicator 0 and 99.99% loss on "Perda do setor" (i.e. 0.01% attainment).
+    PROMOTION_INDICATORS.map(({ id }, index) => ({ id, percentage: index === 0 ? 87.5 : index === 1 ? 99.99 : 0 })),
     competenciesAt(1),
   );
   assert.equal(decimal.indicators[0].points, 13.125);
   assert.equal(decimal.indicators[1].points, 0.0012);
   assert.equal(decimal.indicatorTotal, 13.1262);
   assert.equal(decimal.competencies[0].points, 1.6);
+});
+
+test("promotion loss indicator inverts the loss percentage into attainment points", () => {
+  const lossAt = (percentage) => PROMOTION_INDICATORS.map(({ id }) => ({
+    id,
+    percentage: id === "sector-loss" ? percentage : 0,
+  }));
+  const competenciesAt = (score) => PROMOTION_COMPETENCIES.map(({ id }) => ({ id, score }));
+
+  const lossFree = calculatePromotionEvaluationResult(lossAt(0), competenciesAt(1));
+  assert.equal(lossFree.indicators.find((item) => item.id === "sector-loss").points, 12);
+  assert.equal(lossFree.indicatorTotal, 12);
+
+  const halfLoss = calculatePromotionEvaluationResult(lossAt(50), competenciesAt(1));
+  assert.equal(halfLoss.indicators.find((item) => item.id === "sector-loss").points, 6);
+  assert.equal(halfLoss.indicatorTotal, 6);
+
+  const fullLoss = calculatePromotionEvaluationResult(lossAt(100), competenciesAt(1));
+  assert.equal(fullLoss.indicators.find((item) => item.id === "sector-loss").points, 0);
+  assert.equal(fullLoss.indicatorTotal, 0);
 });
 
 test("promotion preview recalculates partial answers and classifies only complete evaluations", () => {
@@ -235,7 +260,7 @@ test("promotion preview recalculates partial answers and classifies only complet
   assert.equal(preview.classification, null);
 
   const completed = calculatePromotionEvaluationPreview(
-    PROMOTION_INDICATORS.map(({ id }) => ({ id, percentage: 100 })),
+    PROMOTION_INDICATORS.map(({ id }) => ({ id, percentage: id === "sector-loss" ? 0 : 100 })),
     PROMOTION_COMPETENCIES.map(({ id }) => ({ id, score: 5 })),
   );
   assert.equal(completed.complete, true);
