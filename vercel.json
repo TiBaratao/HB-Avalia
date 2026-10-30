@@ -1,0 +1,13 @@
+{
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install",
+  "framework": "nextjs",
+  "regions": ["gru1"],
+  "crons": [
+    {
+      "path": "/api/cron/publish-scheduled-checklists",
+      "schedule": "5 3 * * *"
+    }
+  ]
+}
