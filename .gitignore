@@ -9,3 +9,4 @@ firestore-debug.log
 *.tsbuildinfo
 .vercel
 .env*
+configure-vercel.ps1

@@ -1,6 +1,6 @@
 # Vercel and Firebase setup for `hb-avalia2`
 
-Vercel (`https://hbavalia.vercel.app`) is the official deployment platform for HB Avalia. The app runs against the Firebase project `hb-avalia2`; the Netlify site is only kept until the Vercel cron is validated.
+Vercel (`https://hbavalia.vercel.app`) is the official deployment platform for HB Avalia. The app runs against the Firebase project `hb-avalia2`. The former Netlify site is decommissioned; do not deploy there.
 
 ## Firebase project
 

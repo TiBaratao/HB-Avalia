@@ -1,6 +1,6 @@
 # Firebase — HB Avalia
 
-> These instructions describe the original `hb-avalia` project and its Firebase Cloud Functions deployment. For the empty `hb-avalia2` destination on Netlify/Spark, use [NETLIFY-SETUP.md](../NETLIFY-SETUP.md); do not run the Firebase deploy commands below against the destination.
+> These instructions describe the original `hb-avalia` project and its Firebase Cloud Functions deployment. For the `hb-avalia2` deployment on Vercel, use [VERCEL-SETUP.md](../VERCEL-SETUP.md); do not run the Firebase deploy commands below against the destination.
 
 ## Projeto e banco
 
