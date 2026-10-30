@@ -2,12 +2,10 @@ import { getApp, getApps, initializeApp, type FirebaseApp } from "firebase/app";
 import { connectAuthEmulator, getAuth, type Auth } from "firebase/auth";
 import { getAnalytics, isSupported, type Analytics } from "firebase/analytics";
 import { connectFirestoreEmulator, getFirestore, type Firestore } from "firebase/firestore";
-import { connectFunctionsEmulator, getFunctions, type Functions } from "firebase/functions";
 
 let app: FirebaseApp | undefined;
 let auth: Auth | undefined;
 let db: Firestore | undefined;
-let functions: Functions | undefined;
 let analytics: Promise<Analytics | null> | undefined;
 
 export function getFirebaseApp() {
@@ -51,14 +49,6 @@ export function getFirebaseDb(): Firestore {
   return db;
 }
 
-export function getFirebaseFunctions(): Functions {
-  if (functions) return functions;
-  functions = getFunctions(getFirebaseApp(), "southamerica-east1");
-  if (process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATORS === "true") {
-    connectFunctionsEmulator(functions, "127.0.0.1", 5001);
-  }
-  return functions;
-}
 export function getFirebaseAnalytics(): Promise<Analytics | null> {
   if (typeof window === "undefined" || !process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID) {
     return Promise.resolve(null);

@@ -1,12 +1,8 @@
 node_modules/
 .next/
-.env*.local
-.env.vercel
+.env*
 .firebase/
 .vercel/
 firebase-debug.log
 firestore-debug.log
 *.tsbuildinfo
-.vercel
-.env*
-configure-vercel.ps1

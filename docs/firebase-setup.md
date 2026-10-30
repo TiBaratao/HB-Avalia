@@ -1,10 +1,10 @@
 # Firebase — HB Avalia
 
-> These instructions describe the original `hb-avalia` project and its Firebase Cloud Functions deployment. For the `hb-avalia2` deployment on Vercel, use [VERCEL-SETUP.md](../VERCEL-SETUP.md); do not run the Firebase deploy commands below against the destination.
+> Estas instruções descrevem o comportamento funcional e o Firestore do projeto `hb-avalia2`. Para variáveis de ambiente, cron e deploy no Vercel, use [VERCEL-SETUP.md](../VERCEL-SETUP.md).
 
 ## Projeto e banco
 
-- Projeto: `hb-avalia`
+- Projeto: `hb-avalia2`
 - Firestore: `(default)` em `southamerica-east1` (São Paulo)
 - Firebase Authentication: provedor E-mail/Senha habilitado
 - Regras e índices: `firestore.rules` e `firestore.indexes.json`
@@ -64,29 +64,20 @@ O cliente usa as variáveis `NEXT_PUBLIC_FIREBASE_*` de `.env.local`; consulte `
 Para publicar regras e índices com Firebase CLI autenticado:
 
 ```sh
-firebase deploy --only firestore:rules,firestore:indexes --project hb-avalia
+npm run deploy:firebase
 ```
 
-Os índices compostos podem levar alguns minutos para terminar de construir. Em produção, sirva o app por HTTPS.
+O script usa `--project hb-avalia2`. Os índices compostos podem levar alguns minutos para terminar de construir. Em produção, sirva o app por HTTPS.
 
 Após qualquer alteração em `firestore.rules`, publique as regras antes de depender das validações no servidor. A configuração local não comprova qual versão está implantada no projeto Firebase; confirme a publicação no Firebase Console ou no histórico de deploy da equipe.
 
 ## Publicação automática de checklists
 
-As rotinas estão em `functions/` e usam Cloud Functions for Firebase de 2ª geração com Node.js 22. A função `publishScheduledChecklists` é executada diariamente às 00h05 em `America/Sao_Paulo`; ela publica os modelos habilitados no dia configurado. O projeto Firebase precisa ter o faturamento/plano e as APIs exigidos pelo Cloud Scheduler e Cloud Functions habilitados.
-
-Instale as dependências e publique a rotina junto das regras:
-
-```sh
-npm install --prefix functions
-firebase deploy --only functions:publishScheduledChecklists,firestore:rules --project hb-avalia
-```
-
-Não considere os agendamentos ativos até as funções serem publicadas com sucesso e suas próximas execuções serem confirmadas nos logs do Firebase. Alterações locais de função e regras não publicam nada no projeto remoto.
+A publicação recorrente roda no Vercel Cron, em `/api/cron/publish-scheduled-checklists`, diariamente às 00h05 em `America/Sao_Paulo`. O agendamento e as variáveis necessárias (`CRON_SECRET`, service account) estão descritos em [VERCEL-SETUP.md](../VERCEL-SETUP.md). Não há mais Cloud Functions no fluxo de publicação.
 
 ## Validações do servidor e privacidade
 
-Os envios finais de avaliação, indicação de promoção, decisão administrativa e resposta de pesquisa passam pelas funções autenticadas em `functions/secure-actions.js`, na região `southamerica-east1`. O cliente ainda pode gravar rascunhos de avaliação. As regras do Firestore impedem o cliente de transformar o rascunho em resultado final ou gravar diretamente uma resposta ou indicação.
+Os envios finais de avaliação, indicação de promoção, decisão administrativa e resposta de pesquisa passam pelas rotas autenticadas do Vercel (`/api/evaluations`, `/api/promotion-requests`, `/api/promotion-requests/{requestId}/decision` e `/api/surveys/responses`), que verificam o token do Firebase e gravam com o Admin SDK. O cliente ainda pode gravar rascunhos de avaliação. As regras do Firestore impedem o cliente de transformar o rascunho em resultado final ou gravar diretamente uma resposta ou indicação.
 
 As médias das avaliações são calculadas pelo servidor a partir dos critérios ativos. A indicação busca até 30 avaliações concluídas do colaborador e recalcula as notas com base nas respostas armazenadas; o navegador não escolhe quais notas anexar. Na resposta de pesquisa, a definição das perguntas é lida do Firestore, cada pergunta é validada e o documento de resposta não recebe UID nem horário de envio. O marcador de participação permanece em uma coleção separada e só pode ser lido pela própria conta.
 
@@ -103,14 +94,15 @@ npm test
 npm run test:rules
 ```
 
-`npm test` valida as funções de domínio sem serviços externos. `npm run test:rules` inicia o emulador do Firestore (Java precisa estar instalado e no PATH) e verifica que os clientes só salvam rascunhos, sem publicar resultados finais, respostas ou indicações. O app local também pode usar as funções pelo emulador com `NEXT_PUBLIC_USE_FIREBASE_EMULATORS=true` e `firebase emulators:start --only auth,firestore,functions`.
+`npm test` valida as funções de domínio sem serviços externos. `npm run test:rules` inicia o emulador do Firestore (Java precisa estar instalado e no PATH) e verifica que os clientes só salvam rascunhos, sem publicar resultados finais, respostas ou indicações. O app local também pode usar os emuladores com `NEXT_PUBLIC_USE_FIREBASE_EMULATORS=true` e `firebase emulators:start --only auth,firestore`.
 
 ## Publicação destas alterações
 
-Antes de abrir a aplicação com dados reais, publique funções, regras e índices no projeto correto:
+Antes de abrir a aplicação com dados reais, publique regras e índices no projeto correto e faça o deploy pelo Vercel:
 
 ```sh
-firebase deploy --only functions,firestore:rules,firestore:indexes --project hb-avalia
+npm run deploy:firebase
+git push origin main
 ```
 
-Depois, confirme no Firebase Console que as regras foram publicadas e confira `firebase functions:list --project hb-avalia` e os logs das quatro funções callable. As rotas antigas de escrita do cliente deixam de funcionar assim que as regras novas forem publicadas; por isso, publique funções e regras no mesmo release e só então disponibilize a interface atualizada. A verificação remota precisa ser feita com uma conta Firebase autorizada; a presença desses arquivos no workspace não comprova a implantação.
+Depois, confirme no Firebase Console que as regras foram publicadas e acompanhe o deploy em [VERCEL-SETUP.md](../VERCEL-SETUP.md). A verificação remota precisa ser feita com uma conta Firebase autorizada; a presença desses arquivos no workspace não comprova a implantação.

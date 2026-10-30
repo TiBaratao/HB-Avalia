@@ -9,7 +9,7 @@
         "build": "next build",
         "lint": "eslint src functions tests",
         "typecheck": "tsc --noEmit",
-        "deploy:firebase": "firebase deploy --only functions,firestore:rules,firestore:indexes --project hb-avalia2",
+        "deploy:firebase": "firebase deploy --only firestore:rules,firestore:indexes --project hb-avalia2",
         "test": "node --test functions/test/domain.test.js functions/test/scheduled-checklists.test.js",
         "check": "npm run typecheck && npm run lint && npm test && npm run test:rules",
         "dev": "next dev"
