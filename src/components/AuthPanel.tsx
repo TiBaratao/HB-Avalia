@@ -70,7 +70,7 @@ export function AuthPanel() {
       <section className="auth-card">
         <div className="auth-company-brand">
           <CompanyLogo className="auth-company-logo"/>
-          <span><b>HB AVALIA</b><small>DESEMPENHO E LIDERANÇA</small></span>
+          <span><b>HB Avalia</b><small>Desempenho e liderança</small></span>
         </div>
         <h1>{mode === "login" ? "Entre na sua conta" : "Crie seu acesso"}</h1>
         <p className="auth-intro">Avaliações e rotinas da sua equipe, em um só lugar.</p>

@@ -18,7 +18,10 @@ import { ThemeToggle } from "./ThemeProvider";
 import {
   ArrowLeft,
   Buildings,
+  ArrowUpRight,
+  Check,
   CheckCircle,
+  Tray,
   Clock,
   Target,
   UserCircle,
@@ -234,7 +237,7 @@ export function Workspace({ user, companyId, onSignOut }: { user: User; companyI
         </div>
       </aside>
       <main className="live-main">
-        <header className="live-topbar"><div><span className="live-status-dot"/> Dados conectados ao Firestore</div><div className="live-topbar-actions"><ThemeToggle/><button type="button" className="button button-outline button-small topbar-signout" aria-label="Sair da conta" title="Sair da conta" onClick={onSignOut}><SignOut size={15} weight="regular"/><span>Sair</span></button><button type="button" className="button button-outline button-small" onClick={() => void refresh(true)} disabled={refreshing}>{refreshing ? "Atualizando…" : "Atualizar"}</button></div></header>
+        <header className="live-topbar"><div><span className="live-status-dot"/> Conectado</div><div className="live-topbar-actions"><ThemeToggle/><button type="button" className="button button-outline button-small topbar-signout" aria-label="Sair da conta" title="Sair da conta" onClick={onSignOut}><SignOut size={15} weight="regular"/><span>Sair</span></button><button type="button" className="button button-outline button-small" onClick={() => void refresh(true)} disabled={refreshing}>{refreshing ? "Atualizando…" : "Atualizar"}</button></div></header>
         <div className="live-content">
           {notice && <div className={`live-notice ${notice.kind}`} role="status">{notice.text}</div>}
           {loadError && <div className="live-notice error" role="alert">{loadError}</div>}
@@ -268,35 +271,30 @@ function Overview({ data, user, execute, onNavigate }: { data: WorkspaceData; us
   const isAdmin = data.member.role === "ADMIN";
   const isLeader = data.member.role === "LEADER";
   return <>
-    <PageHeading eyebrow={isAdmin ? "PAINEL DA EMPRESA" : isLeader ? "PAINEL DA LIDERANÇA" : "SEU ESPAÇO"} title={`Olá, ${data.member.name.split(" ")[0]}`} subtitle={isAdmin ? "Acompanhe a configuração e os resultados da empresa." : "Seus dados e suas ações, atualizados do banco da empresa."}/>
-    {isAdmin && <div className="live-stats">
-      <Stat label="Pessoas ativas" value={String(data.members.filter((member) => member.status === "ACTIVE").length)} hint="Membros cadastrados"/>
-      <Stat label="Avaliações enviadas" value={String(completed.length)} hint="Respostas recebidas"/>
-      <Stat label="Checklists pendentes" value={String(data.assignments.filter((assignment) => !isChecklistCompleted(assignment, data.results[assignment.id] ?? [])).length)} hint="Atribuições abertas"/>
-      <Stat label="Ciclo" value={openCycle?.name ?? "—"} hint={openCycle ? "Recebendo avaliações" : "Nenhum ciclo aberto"}/>
-    </div>}
-    {!isAdmin && <div className="live-stats">
-      <Stat label={isLeader ? "Pessoas na equipe" : "Lideranças da equipe"} value={String(data.members.length)} hint="Conforme suas equipes"/>
-      <Stat label="Avaliações pendentes" value={String(pendingEvaluationCount)} hint={pendingEvaluationCount ? "Aguardando sua resposta" : "Nenhuma resposta pendente"}/>
-      <Stat label="Checklists pendentes" value={String(pendingChecklistCount)} hint={pendingChecklistCount ? "Atribuídos a você" : "Tudo em dia"}/>
-      <Stat label="Ciclo aberto" value={openCycle?.name ?? "—"} hint={openCycle ? "Avaliações disponíveis" : "Aguarde a administração"}/>
-    </div>}
+    <PageHeading title={`Olá, ${data.member.name.split(" ")[0]}`} subtitle={isAdmin ? "Acompanhe a configuração e os resultados da empresa." : "Veja o que precisa da sua atenção e acompanhe suas avaliações."}/>
+    {isAdmin && <>
+      <AdminAttention data={data} onNavigate={onNavigate}/>
+      <dl className="overview-summary">
+        <div><dt>Pessoas ativas</dt><dd>{String(data.members.filter((member) => member.status === "ACTIVE").length)}</dd><small>Membros cadastrados</small></div>
+        <div><dt>Avaliações enviadas</dt><dd>{String(completed.length)}</dd><small>Respostas recebidas</small></div>
+        <div><dt>Checklists em aberto</dt><dd>{String(data.assignments.filter((assignment) => !isChecklistCompleted(assignment, data.results[assignment.id] ?? [])).length)}</dd><small>Atribuições abertas</small></div>
+        <div><dt>Ciclo</dt><dd>{openCycle?.name ?? "—"}</dd><small>{openCycle ? (openCycle.endsAt ? "Aberto até " + formatDate(openCycle.endsAt) : "Recebendo avaliações") : "Nenhum ciclo aberto"}</small></div>
+      </dl>
+    </>}
+    {!isAdmin && <>
+      <MemberAttention role={data.member.role} pendingEvaluations={pendingEvaluationCount} pendingChecklists={pendingChecklistCount} onNavigate={onNavigate}/>
+      <dl className="overview-summary">
+        <div><dt>{isLeader ? "Pessoas na equipe" : "Lideranças da equipe"}</dt><dd>{String(data.members.length)}</dd><small>Conforme suas equipes</small></div>
+        <div><dt>Avaliações pendentes</dt><dd>{String(pendingEvaluationCount)}</dd><small>{pendingEvaluationCount ? "Aguardando sua resposta" : "Nenhuma resposta pendente"}</small></div>
+        <div><dt>Checklists pendentes</dt><dd>{String(pendingChecklistCount)}</dd><small>{pendingChecklistCount ? "Atribuídos a você" : "Tudo em dia"}</small></div>
+        <div><dt>Ciclo aberto</dt><dd>{openCycle?.name ?? "—"}</dd><small>{openCycle ? "Avaliações disponíveis" : "Aguarde a administração"}</small></div>
+      </dl>
+    </>}
     {!isAdmin && <ChecklistHomeSection data={data} user={user} execute={execute} onNavigate={onNavigate}/>}
-    <div className="live-two-column">
+    {isAdmin ? <AdminSetupSteps data={data} user={user} onNavigate={onNavigate}/> : null}
+    <div className="overview-recent">
       <section className="live-panel">
-        <div className="live-panel-heading"><div><span className="eyebrow">DADOS REAIS</span><h2>{isAdmin ? "Estrutura da empresa" : "Ações da equipe"}</h2></div></div>
-        {isAdmin ? <div className="quick-links">
-          <button onClick={() => onNavigate("team")}><span>01</span><b>Convide sua equipe</b><small>Cadastre e-mails e envie o código da empresa.</small></button>
-          <button onClick={() => onNavigate("cycles")}><span>02</span><b>Configure setores e critérios</b><small>Adapte o sistema à organização.</small></button>
-          <button onClick={() => onNavigate("checklists")}><span>03</span><b>Crie e atribua checklists</b><small>As tarefas ficam salvas para cada pessoa.</small></button>
-        </div> : <div className="quick-links">
-          <button onClick={() => onNavigate("evaluations")}><span>01</span><b>{data.member.role === "EMPLOYEE" ? "Avaliar minha liderança" : "Avaliar minha equipe"}{pendingEvaluationCount > 0 && <em className="quick-link-pending">{pendingEvaluationCount} pendente{pendingEvaluationCount === 1 ? "" : "s"}</em>}</b><small>{pendingEvaluationCount ? "Responda às avaliações do ciclo aberto." : "Não há avaliações aguardando resposta."}</small></button>
-          <button onClick={() => onNavigate("checklists")}><span>02</span><b>Abrir checklists{pendingChecklistCount > 0 && <em className="quick-link-pending">{pendingChecklistCount} pendente{pendingChecklistCount === 1 ? "" : "s"}</em>}</b><small>{pendingChecklistCount ? "Atualize as tarefas atribuídas a você." : "Você concluiu todas as tarefas atribuídas."}</small></button>
-          {data.member.role === "LEADER" && <button onClick={() => onNavigate("team")}><span>03</span><b>Ver minha equipe</b><small>Acompanhe quem está na sua equipe.</small></button>}
-        </div>}
-      </section>
-      <section className="live-panel">
-        <div className="live-panel-heading"><div><span className="eyebrow">ACOMPANHAMENTO</span><h2>{isAdmin ? "Avaliações recentes" : isLeader ? "Notas que você deu à equipe" : "Suas avaliações"}</h2></div><button className="text-link" onClick={() => onNavigate("evaluations")}>Abrir <span>↗</span></button></div>
+        <div className="live-panel-heading"><div><h2>{isAdmin ? "Avaliações recentes" : isLeader ? "Notas que você deu à equipe" : "Suas avaliações"}</h2></div><button className="text-link" onClick={() => onNavigate("evaluations")}>Abrir <ArrowUpRight size={14} aria-hidden="true"/></button></div>
         {completed.length ? <>
           <div className="live-list">{visibleEvaluations.map((item) => <EvaluationListItem key={item.id} item={item} data={data}/>)}</div>
           {completed.length > 6 && <button type="button" className="text-link evaluation-more" onClick={() => setVisibleEvaluationCount((current) => current >= completed.length ? 6 : Math.min(current + 6, completed.length))}>
@@ -306,6 +304,49 @@ function Overview({ data, user, execute, onNavigate }: { data: WorkspaceData; us
       </section>
     </div>
   </>;
+}
+
+type AttentionItem = { key: string; tone: "alert" | "info"; title: string; text: string; section: Section };
+
+function AttentionPanel({ items, clearText, onNavigate }: { items: AttentionItem[]; clearText: string; onNavigate: (section: Section) => void }) {
+  return <section className="live-panel overview-attention" aria-labelledby="overview-attention-title">
+    <h2 id="overview-attention-title">Precisa da sua atenção</h2>
+    {items.length
+      ? <ul className="attention-list">{items.map((item) => <li key={item.key}><button type="button" className={`attention-item ${item.tone}`} onClick={() => onNavigate(item.section)}><b>{item.title}</b><small>{item.text}</small><span aria-hidden="true">Abrir</span></button></li>)}</ul>
+      : <p className="attention-clear">{clearText}</p>}
+  </section>;
+}
+
+function AdminAttention({ data, onNavigate }: { data: WorkspaceData; onNavigate: (section: Section) => void }) {
+  const expired = data.assignments.filter((assignment) => isChecklistExpired(assignment, data.results[assignment.id] ?? [])).length;
+  const promotions = data.promotionRequests.filter((request) => request.status === "PENDING").length;
+  const hasOpenCycle = data.cycles.some(isCycleAvailable);
+  const items: AttentionItem[] = [];
+  if (expired > 0) items.push({ key: "expired", tone: "alert", title: expired === 1 ? "1 checklist passou do prazo" : `${expired} checklists passaram do prazo`, text: "Veja quem ainda não concluiu e cobre a entrega.", section: "checklists" });
+  if (promotions > 0) items.push({ key: "promotions", tone: "alert", title: promotions === 1 ? "1 pedido de promoção aguarda decisão" : `${promotions} pedidos de promoção aguardam decisão`, text: "Analise a indicação e registre a decisão.", section: "promotions" });
+  if (!hasOpenCycle) items.push({ key: "cycle", tone: "info", title: "Nenhum ciclo de avaliação aberto", text: "Abra um ciclo em Configuração para a equipe receber avaliações.", section: "cycles" });
+  return <AttentionPanel items={items} clearText="Tudo em dia: nenhum prazo vencido, nenhum pedido aguardando decisão e há um ciclo aberto." onNavigate={onNavigate}/>;
+}
+
+function MemberAttention({ role, pendingEvaluations, pendingChecklists, onNavigate }: { role: FirebaseRole; pendingEvaluations: number; pendingChecklists: number; onNavigate: (section: Section) => void }) {
+  const items: AttentionItem[] = [];
+  if (pendingEvaluations > 0) items.push({ key: "evaluations", tone: "alert", title: `${pendingEvaluations} ${plural(pendingEvaluations, "avaliação pendente", "avaliações pendentes")}`, text: role === "EMPLOYEE" ? "Responda a avaliação da sua liderança no ciclo aberto." : "Responda às avaliações da sua equipe no ciclo aberto.", section: "evaluations" });
+  if (pendingChecklists > 0) items.push({ key: "checklists", tone: "alert", title: `${pendingChecklists} ${plural(pendingChecklists, "checklist pendente", "checklists pendentes")}`, text: "Atualize as tarefas atribuídas a você.", section: "checklists" });
+  return <AttentionPanel items={items} clearText="Tudo em dia: nenhuma avaliação ou checklist aguardando você." onNavigate={onNavigate}/>;
+}
+
+function AdminSetupSteps({ data, user, onNavigate }: { data: WorkspaceData; user: User; onNavigate: (section: Section) => void }) {
+  const steps: Array<{ key: string; done: boolean; title: string; text: string; section: Section }> = [
+    { key: "team", done: data.members.some((member) => member.status === "ACTIVE" && member.uid !== user.uid), title: "Convide sua equipe", text: "Cadastre e-mails e envie o código da empresa.", section: "team" },
+    { key: "structure", done: data.departments.length > 0 && data.teams.length > 0 && data.criteria.length > 0, title: "Configure setores e critérios", text: "Adapte o sistema à organização.", section: "cycles" },
+    { key: "checklists", done: data.templates.length > 0 || data.assignments.length > 0, title: "Crie e atribua checklists", text: "As tarefas ficam salvas para cada pessoa.", section: "checklists" },
+  ];
+  const remaining = steps.filter((step) => !step.done);
+  if (!remaining.length) return null;
+  return <section className="live-panel overview-setup" aria-labelledby="overview-setup-title">
+    <h2 id="overview-setup-title">Para começar</h2>
+    <ol className="setup-steps">{remaining.map((step) => <li key={step.key}><button type="button" onClick={() => onNavigate(step.section)}><b>{step.title}</b><small>{step.text}</small></button></li>)}</ol>
+  </section>;
 }
 
 function ChecklistHomeSection({ data, user, execute, onNavigate }: { data: WorkspaceData; user: User; execute: (operation: () => Promise<unknown>, message: string) => Promise<boolean>; onNavigate: (section: Section) => void }) {
@@ -321,10 +362,10 @@ function ChecklistHomeSection({ data, user, execute, onNavigate }: { data: Works
 
   return <section className="live-panel checklist-home-panel">
     <div className="live-panel-heading">
-      <div><span className="eyebrow">PARA FAZER</span><h2>Meus checklists</h2></div>
+      <div><h2>Meus checklists</h2></div>
       <div className="checklist-home-heading-actions">
-        <span className="checklist-home-count">{pending.length} pendentes · {expired.length} expirados</span>
-        <button type="button" className="text-link" onClick={() => onNavigate("checklists")}>Ver todos <span>↗</span></button>
+        <span className="checklist-home-count">{pending.length} {plural(pending.length, "pendente", "pendentes")} · {expired.length} {plural(expired.length, "expirado", "expirados")}</span>
+        <button type="button" className="text-link" onClick={() => onNavigate("checklists")}>Ver todos <ArrowUpRight size={14} aria-hidden="true"/></button>
       </div>
     </div>
     {visibleAssignments.length
@@ -345,7 +386,7 @@ function ChecklistHomeSection({ data, user, execute, onNavigate }: { data: Works
       : myAssignments.length
         ? expired.length
           ? <p className="checklist-assignment-section-empty">Não há checklists dentro do prazo aguardando preenchimento.</p>
-          : <div className="checklist-home-empty"><span className="checklist-home-complete-mark">✓</span><div><b>Tudo em dia!</b><p>Você concluiu todos os checklists atribuídos.</p></div></div>
+          : <div className="checklist-home-empty"><span className="checklist-home-complete-mark"><Check size={16} weight="bold" aria-hidden="true"/></span><div><b>Tudo em dia!</b><p>Você concluiu todos os checklists atribuídos.</p></div></div>
         : <EmptyState title="Nenhum checklist pendente" text="Quando receber uma atribuição, ela aparecerá aqui para você preencher."/>}
     {expired.length > 0 && <div className="checklist-home-expired">
       <div className="checklist-assignment-section-heading"><h2>Expirados</h2><span>{expired.length}</span></div>
@@ -444,16 +485,16 @@ function TeamPage({ data, user, execute, onOpenProfile }: { data: WorkspaceData;
   });
   const hasFilters = Boolean(term || roleFilter || statusFilter);
   return <>
-    <PageHeading eyebrow={admin ? "ADMINISTRAÇÃO" : "PESSOAS"} title={admin ? "Pessoas e equipes" : "Minha equipe"} subtitle={admin ? "Ajuste funções, equipes e acesso das pessoas." : "Pessoas das equipes que você compartilha."}/>
+    <PageHeading title={admin ? "Pessoas e equipes" : "Minha equipe"} subtitle={admin ? "Ajuste funções, equipes e acesso das pessoas." : "Pessoas das equipes que você compartilha."}/>
     <section className="live-panel">
-      <div className="live-panel-heading"><div><span className="eyebrow">MEMBROS</span><h2>{hasFilters ? `${people.length} de ${allPeople.length} pessoa(s)` : `${allPeople.length} pessoa(s)`}</h2></div></div>
+      <div className="live-panel-heading"><div><h2>{hasFilters ? `${people.length} de ${allPeople.length} ${allPeople.length === 1 ? "pessoa" : "pessoas"}` : `${allPeople.length} ${allPeople.length === 1 ? "pessoa" : "pessoas"}`}</h2></div></div>
       <div className="filter-bar" role="search">
         <label className="filter-field filter-field-grow">Buscar<input type="search" className="filter-input" value={search} placeholder="Nome, e-mail ou cargo" onChange={(event) => setSearch(event.target.value)}/></label>
         <label className="filter-field">Perfil<select className="filter-input" value={roleFilter} onChange={(event) => setRoleFilter(event.target.value as "" | FirebaseRole)}><option value="">Todos os perfis</option><option value="ADMIN">Administradora</option><option value="LEADER">Líder</option><option value="EMPLOYEE">Colaborador</option></select></label>
         {admin && <label className="filter-field">Status<select className="filter-input" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "" | "ACTIVE" | "INACTIVE")}><option value="">Todos os status</option><option value="ACTIVE">Ativa</option><option value="INACTIVE">Inativa</option></select></label>}
         {hasFilters && <button type="button" className="ranking-filter-reset" onClick={() => { setSearch(""); setRoleFilter(""); setStatusFilter(""); }}>Limpar filtros</button>}
       </div>
-      {people.length ? <div className="live-table-wrap"><table className="live-table"><thead><tr><th>Pessoa</th><th>Cargo atual</th><th>Perfil</th><th>Setor / equipe(s)</th><th>Status</th>{admin && <th>Ação</th>}{!admin && data.member.role === "LEADER" && <th>PDI</th>}</tr></thead><tbody>{people.map((member) => <MemberRow key={member.uid} member={member} teams={data.teams} departments={data.departments} jobTitles={jobTitles} editable={admin && member.uid !== user.uid} onOpenProfile={(admin || (data.member.role === "LEADER" && member.role === "EMPLOYEE")) ? () => onOpenProfile(member.uid) : undefined} onSave={(changes) => execute(() => updateMember(data.company.id ?? "", member, changes), "Perfil atualizado.")} onRemove={admin && member.uid !== user.uid ? () => execute(() => removeMember(data.company.id ?? "", member.uid, member.teamIds), "Pessoa removida da empresa.") : undefined}/>)}</tbody></table></div> : hasFilters ? <EmptyState title="Nenhuma pessoa encontrada" text="Ajuste a busca ou os filtros para ver outras pessoas."/> : <EmptyState title="A equipe ainda está vazia" text={admin ? "As pessoas que se cadastrarem na empresa aparecerão aqui para você definir função e equipes." : "A administração ainda não adicionou pessoas às suas equipes."}/>}
+      {people.length ? <div className="live-table-wrap"><table className="live-table member-table"><thead><tr><th>Pessoa</th><th>Cargo atual</th><th>Perfil</th><th>Setor / equipe(s)</th><th>Status</th>{admin && <th>Ação</th>}{!admin && data.member.role === "LEADER" && <th>PDI</th>}</tr></thead><tbody>{people.map((member) => <MemberRow key={member.uid} member={member} teams={data.teams} departments={data.departments} jobTitles={jobTitles} editable={admin && member.uid !== user.uid} onOpenProfile={(admin || (data.member.role === "LEADER" && member.role === "EMPLOYEE")) ? () => onOpenProfile(member.uid) : undefined} onSave={(changes) => execute(() => updateMember(data.company.id ?? "", member, changes), "Perfil atualizado.")} onRemove={admin && member.uid !== user.uid ? () => execute(() => removeMember(data.company.id ?? "", member.uid, member.teamIds), "Pessoa removida da empresa.") : undefined}/>)}</tbody></table></div> : hasFilters ? <EmptyState title="Nenhuma pessoa encontrada" text="Ajuste a busca ou os filtros para ver outras pessoas."/> : <EmptyState title="A equipe ainda está vazia" text={admin ? "As pessoas que se cadastrarem na empresa aparecerão aqui para você definir função e equipes." : "A administração ainda não adicionou pessoas às suas equipes."}/>}
     </section>
   </>;
 }
@@ -464,16 +505,36 @@ function MemberRow({ member, teams, departments, jobTitles, editable, onOpenProf
   const [teamIds, setTeamIds] = useState(member.teamIds);
   const [positionTitle, setPositionTitle] = useState(member.positionTitle ?? "");
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false);
   const changed = role !== member.role || status !== member.status || teamIds.join("|") !== member.teamIds.join("|") || positionTitle.trim() !== (member.positionTitle ?? "");
-  return <tr>
-    <td><b>{member.name}</b><small className="table-subline">{member.email}</small></td>
-    <td>{editable ? <><input className="table-select current-position-input" list={"position-title-options-" + member.uid} aria-label={"Cargo atual de " + member.name} maxLength={100} placeholder="Ex.: Analista" value={positionTitle} onChange={(event) => setPositionTitle(event.target.value)}/><datalist id={"position-title-options-" + member.uid}>{jobTitles.map((title) => <option key={title} value={title}/>)}</datalist></> : member.positionTitle || "Não informado"}</td>
-    <td>{editable ? <select className="table-select" value={role} onChange={(event) => setRole(event.target.value as FirebaseRole)}><option value="ADMIN">Administradora</option><option value="LEADER">Líder</option><option value="EMPLOYEE">Colaborador</option></select> : roleNames[member.role]}</td>
-    <td>{editable ? <TeamAssignmentPicker teams={teams} departments={departments} selectedTeamIds={teamIds} onChange={setTeamIds}/> : member.teamIds.map((id) => { const team = teams.find((item) => item.id === id); const department = team && departments.find((item) => item.id === team.departmentId); return team ? `${department?.name ?? "Setor"} / ${team.name}` : id; }).join(", ") || "Sem equipe"}</td>
-    <td>{editable ? <select className="table-select" value={status} onChange={(event) => setStatus(event.target.value as "ACTIVE" | "INACTIVE")}><option value="ACTIVE">Ativa</option><option value="INACTIVE">Inativa</option></select> : <span className={`status-chip ${member.status === "ACTIVE" ? "done" : "pending"}`}>{member.status === "ACTIVE" ? "Ativo" : "Inativo"}</span>}</td>
-    {onOpenProfile && <td><button className="button button-outline button-small" onClick={onOpenProfile}><UserCircle size={15}/> Ver perfil</button></td>}
-    {editable && <td><div className="row-actions"><button className="button button-outline button-small" aria-label={"Salvar alterações de " + member.name} disabled={!changed || busy} onClick={async () => { setBusy(true); await onSave({ role, status, teamIds, positionTitle: positionTitle.trim() }); setBusy(false); }}>{busy ? "Salvando…" : "Salvar"}</button>{onRemove && <ConfirmButton dialogTitle="Remover pessoa da empresa" description={<>Remover <b>{member.name}</b> da empresa? A pessoa perde o acesso aos dados da empresa. Avaliações, PDIs e históricos já registrados são mantidos, e o acesso pode ser solicitado novamente.</>} className="button button-danger button-small" confirmLabel="Remover" busyLabel="Removendo…" onConfirm={onRemove}>Remover</ConfirmButton>}</div></td>}
-  </tr>;
+  const teamLabel = member.teamIds.map((id) => { const team = teams.find((item) => item.id === id); const department = team && departments.find((item) => item.id === team.departmentId); return team ? `${department?.name ?? "Setor"} / ${team.name}` : id; }).join(", ") || "Sem equipe";
+  const cancelEditing = () => { setRole(member.role); setStatus(member.status); setTeamIds(member.teamIds); setPositionTitle(member.positionTitle ?? ""); setEditing(false); };
+  const editId = "member-edit-" + member.uid;
+  return <>
+    <tr>
+      <td><b>{member.name}</b><small className="table-subline">{member.email}</small></td>
+      <td data-label="Cargo atual">{member.positionTitle || "Não informado"}</td>
+      <td data-label="Perfil">{roleNames[member.role]}</td>
+      <td data-label="Setor / equipe(s)">{teamLabel}</td>
+      <td data-label="Status"><span className={`status-chip ${member.status === "ACTIVE" ? "done" : "pending"}`}>{member.status === "ACTIVE" ? "Ativo" : "Inativo"}</span></td>
+      {(onOpenProfile || editable) && <td><div className="row-actions">
+        {onOpenProfile && <button className="button button-outline button-small" onClick={onOpenProfile}><UserCircle size={15}/> Ver perfil</button>}
+        {editable && <button type="button" className="button button-outline button-small" aria-expanded={editing} aria-controls={editId} aria-label={(editing ? "Cancelar edição de " : "Editar ") + member.name} onClick={() => editing ? cancelEditing() : setEditing(true)}>{editing ? "Cancelar" : "Editar"}</button>}
+      </div></td>}
+    </tr>
+    {editable && editing && <tr className="member-edit-row" id={editId}><td colSpan={6}>
+      <div className="member-edit">
+        <label>Cargo atual<input className="table-select current-position-input" list={"position-title-options-" + member.uid} aria-label={"Cargo atual de " + member.name} maxLength={100} placeholder="Ex.: Analista" value={positionTitle} onChange={(event) => setPositionTitle(event.target.value)}/><datalist id={"position-title-options-" + member.uid}>{jobTitles.map((title) => <option key={title} value={title}/>)}</datalist></label>
+        <label>Perfil<select className="table-select" value={role} onChange={(event) => setRole(event.target.value as FirebaseRole)}><option value="ADMIN">Administradora</option><option value="LEADER">Líder</option><option value="EMPLOYEE">Colaborador</option></select></label>
+        <label>Status<select className="table-select" value={status} onChange={(event) => setStatus(event.target.value as "ACTIVE" | "INACTIVE")}><option value="ACTIVE">Ativa</option><option value="INACTIVE">Inativa</option></select></label>
+        <div className="member-edit-teams"><span>Setor e equipes</span><TeamAssignmentPicker teams={teams} departments={departments} selectedTeamIds={teamIds} onChange={setTeamIds}/></div>
+        <div className="member-edit-actions">
+          <button className="button button-primary button-small" aria-label={"Salvar alterações de " + member.name} disabled={!changed || busy} onClick={async () => { setBusy(true); const saved = await onSave({ role, status, teamIds, positionTitle: positionTitle.trim() }); setBusy(false); if (saved) setEditing(false); }}>{busy ? "Salvando…" : "Salvar alterações"}</button>
+          {onRemove && <ConfirmButton dialogTitle="Remover pessoa da empresa" description={<>Remover <b>{member.name}</b> da empresa? A pessoa perde o acesso aos dados da empresa. Avaliações, PDIs e históricos já registrados são mantidos, e o acesso pode ser solicitado novamente.</>} className="button button-danger button-small" confirmLabel="Remover" busyLabel="Removendo…" onConfirm={onRemove}>Remover da empresa</ConfirmButton>}
+        </div>
+      </div>
+    </td></tr>}
+  </>;
 }
 
 function LeaderDevelopmentPage({ data, onOpenProfile }: { data: WorkspaceData; onOpenProfile: (employeeId: string) => void }) {
@@ -910,7 +971,7 @@ function RankingPage({ data }: { data: WorkspaceData }) {
     leaders.reduce((total, entry) => total + entry.evaluationCount, 0);
 
   return <>
-    <PageHeading eyebrow="RESULTADOS DA EMPRESA" title="Ranking de avaliações" subtitle="Compare as médias por pessoa e explore os resultados por ciclo, setor ou equipe."/>
+    <PageHeading title="Ranking de avaliações" subtitle="Compare as médias por pessoa e explore os resultados por ciclo, setor ou equipe."/>
     <section className="ranking-filters" aria-label="Filtros do ranking">
       <label>
         <span>Ciclo de avaliação</span>
@@ -947,11 +1008,11 @@ function RankingPage({ data }: { data: WorkspaceData }) {
         setOrganizationScope("");
       }}>Limpar filtros</button>}
     </section>
-    <div className="ranking-summary" aria-label="Resumo dos rankings">
-      <article><span className="ranking-summary-icon"><Trophy size={18}/></span><div><small>AVALIAÇÕES CONSIDERADAS</small><b>{totalEvaluations}</b></div></article>
-      <article><span className="ranking-summary-icon"><UsersThree size={18}/></span><div><small>COLABORADORES RANQUEADOS</small><b>{employees.length}</b></div></article>
-      <article><span className="ranking-summary-icon"><ChartBar size={18}/></span><div><small>LÍDERES RANQUEADOS</small><b>{leaders.length}</b></div></article>
-    </div>
+    <dl className="overview-summary overview-summary-3" aria-label="Resumo dos rankings">
+      <div><dt>Avaliações consideradas</dt><dd>{totalEvaluations}</dd></div>
+      <div><dt>Colaboradores ranqueados</dt><dd>{employees.length}</dd></div>
+      <div><dt>Líderes ranqueados</dt><dd>{leaders.length}</dd></div>
+    </dl>
     <p className="ranking-method-note" id="ranking-method-note">A classificação usa a média das avaliações enviadas {cycleId ? `no ciclo selecionado (${selectedCycleName ?? "ciclo"})` : "em todos os ciclos"} {organizationScope ? `para pessoas ${scopeType === "department" ? "do setor" : "da equipe"} ${selectedScopeName ?? "selecionada"}` : "na empresa inteira"}. Empates na média compartilham a mesma posição; médias com menos de 3 avaliações são sinalizadas como “Poucas avaliações” e devem ser interpretadas com cautela.</p>
     <div className="ranking-groups">
       <RankingGroup key={`employees-${cycleId}-${organizationScope}`} title="Colaboradores" description="Desempenho médio recebido" entries={employees} teams={data.teams} departments={data.departments} emptyText="Ainda não há avaliações de desempenho enviadas para colaboradores ativos."/>
@@ -965,7 +1026,7 @@ function RankingGroup({ title, description, entries, teams, departments, emptyTe
   const visibleEntries = showAll ? entries : entries.slice(0, 5);
 
   return <section className="live-panel ranking-group">
-    <div className="live-panel-heading"><div><span className="eyebrow">RANKING</span><h2>{title}</h2><p>{description}</p></div><span className="ranking-group-total">{entries.length} {entries.length === 1 ? "pessoa ranqueada" : "pessoas ranqueadas"}</span></div>
+    <div className="live-panel-heading"><div><h2>{title}</h2><p>{description}</p></div><span className="ranking-group-total">{entries.length} {entries.length === 1 ? "pessoa ranqueada" : "pessoas ranqueadas"}</span></div>
     {entries.length ? <ol className="ranking-list" aria-label={`Ranking de ${title.toLocaleLowerCase("pt-BR")}`} aria-describedby="ranking-method-note">
       {visibleEntries.map((entry) => {
         const rank = entries.findIndex((candidate) => Math.round(candidate.average * 100) === Math.round(entry.average * 100)) + 1;
@@ -978,7 +1039,7 @@ function RankingGroup({ title, description, entries, teams, departments, emptyTe
         });
         return <li className={`ranking-row${rank <= 3 ? ` ranking-row-top-${rank}` : ""}`} key={entry.member.uid}>
           <span className="ranking-place" aria-label={`${rank}º lugar${isTied ? ", empatado" : ""}`}>{rank === 1 && !isTied ? <Trophy size={17} weight="fill"/> : `${rank}º`}</span>
-          <span className="ranking-person"><b>{entry.member.name}</b><small>{teamLabels.length ? teamLabels.join(" · ") : "Sem equipe associada"}</small></span>
+          <span className="ranking-person"><b>{entry.member.name}</b><small>{teamLabels.length ? teamLabels.join(" · ") : "Sem equipe associada"}</small><span className={`ranking-bar${entry.evaluationCount < 3 ? " is-low" : ""}`} aria-hidden="true"><i style={{ width: `${Math.max(0, Math.min(100, (entry.average / 5) * 100))}%` }}/></span></span>
           <span className="ranking-evaluation-meta">
             <span className="ranking-count">{entry.evaluationCount} avaliaç{entry.evaluationCount === 1 ? "ão" : "ões"}</span>
             {entry.evaluationCount < 3 && <span className="ranking-low-sample" title="A média é baseada em menos de 3 avaliações">Poucas avaliações</span>}
@@ -1021,26 +1082,30 @@ function AdminEvaluationDrilldown({ data }: { data: WorkspaceData }) {
   const employeeEvaluations = selectedEmployee ? submitted.filter((item) => item.type === "EMPLOYEE" && item.evaluatedUserId === selectedEmployee.uid) : [];
 
   if (selectedEmployee) return <>
-    <PageHeading eyebrow="DETALHES DO COLABORADOR" title={selectedEmployee.name} subtitle={selectedEmployee.email}/>
-    <button className="text-link back-link" onClick={() => { setSelectedEmployee(null); setSelectedEvaluation(null); }}>← Voltar à equipe</button>
-    <section className="live-panel"><div className="live-panel-heading"><div><span className="eyebrow">AVALIAÇÕES DE DESEMPENHO</span><h2>{employeeEvaluations.length} avaliação(ões)</h2></div></div>
+    <PageHeading title={selectedEmployee.name} subtitle={selectedEmployee.email}/>
+    <button className="text-link back-link" onClick={() => { setSelectedEmployee(null); setSelectedEvaluation(null); }}><ArrowLeft size={14} aria-hidden="true"/> Voltar à equipe</button>
+    <section className="live-panel"><div className="live-panel-heading"><div><h2>{employeeEvaluations.length} {plural(employeeEvaluations.length, "avaliação", "avaliações")}</h2></div></div>
       {employeeEvaluations.length ? employeeEvaluations.map((item) => <EvaluationListItem key={item.id} item={item} data={data} detailed onOpen={() => setSelectedEvaluation(item)}/>) : <EmptyState title="Sem avaliação registrada" text="Quando a liderança concluir uma avaliação, o resultado e os critérios aparecerão aqui."/>}
     </section>
     {selectedEvaluation && <EvaluationDetailsDialog item={selectedEvaluation} data={data} onClose={() => setSelectedEvaluation(null)}/>}
   </>;
 
   return <>
-    <PageHeading eyebrow="RESULTADOS DA EMPRESA" title="Avaliações" subtitle="Explore os resultados por setor, liderança e colaborador."/>
+    <PageHeading title="Avaliações" subtitle="Explore os resultados por setor, liderança e colaborador."/>
     <section className="live-panel">
-      <div className="live-panel-heading"><div><span className="eyebrow">1 · SETOR</span><h2>Panorama geral do setor</h2></div><select className="live-select" value={departmentId} onChange={(event) => { setDepartmentId(event.target.value); setLeaderId(""); }}><option value="">Todos os setores</option>{data.departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}</select></div>
-      {!departmentId ? <div className="drill-cards">{data.departments.map((department) => { const ids = data.teams.filter((team) => team.departmentId === department.id).map((team) => team.id); const personIds = data.members.filter((person) => person.role === "EMPLOYEE" && person.teamIds.some((id) => ids.includes(id))).map((person) => person.uid); const scores = submitted.filter((item) => item.type === "EMPLOYEE" && personIds.includes(item.evaluatedUserId)).map((item) => item.averageScore ?? 0); return <button className="drill-card" key={department.id} onClick={() => setDepartmentId(department.id)}><span className="eyebrow">SETOR</span><b>{department.name}</b><small>{personIds.length} colaboradores · {scores.length} avaliações</small><strong>{mean(scores)}</strong></button>; })}{!data.departments.length && <EmptyState title="Cadastre os setores" text="Os setores configurados aparecerão aqui."/>}</div> : <>
-        <div className="drill-summary"><b>{data.departments.find((item) => item.id === departmentId)?.name}</b><span>Média de desempenho dos colaboradores: <strong>{mean(sectorScores)}</strong> / 5 · {sectorScores.length} avaliação(ões)</span></div>
+      <div className="live-panel-heading"><div><nav className="drill-breadcrumb" aria-label="Caminho da consulta">
+          <button type="button" aria-current={!departmentId ? "page" : undefined} onClick={() => { setDepartmentId(""); setLeaderId(""); }}>Todos os setores</button>
+          {departmentId && <><span aria-hidden="true">/</span><button type="button" aria-current={!leaderId ? "page" : undefined} onClick={() => setLeaderId("")}>{data.departments.find((item) => item.id === departmentId)?.name}</button></>}
+          {leaderId && <><span aria-hidden="true">/</span><span aria-current="page">{selectedLeader?.name}</span></>}
+        </nav><h2>Panorama geral do setor</h2></div><select className="live-select" value={departmentId} onChange={(event) => { setDepartmentId(event.target.value); setLeaderId(""); }}><option value="">Todos os setores</option>{data.departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}</select></div>
+      {!departmentId ? <div className="drill-cards">{data.departments.map((department) => { const ids = data.teams.filter((team) => team.departmentId === department.id).map((team) => team.id); const personIds = data.members.filter((person) => person.role === "EMPLOYEE" && person.teamIds.some((id) => ids.includes(id))).map((person) => person.uid); const scores = submitted.filter((item) => item.type === "EMPLOYEE" && personIds.includes(item.evaluatedUserId)).map((item) => item.averageScore ?? 0); return <button className="drill-card" key={department.id} onClick={() => setDepartmentId(department.id)}><b>{department.name}</b><small>{personIds.length} {plural(personIds.length, "colaborador", "colaboradores")} · {scores.length} {plural(scores.length, "avaliação", "avaliações")}</small><strong>{mean(scores)}</strong></button>; })}{!data.departments.length && <EmptyState title="Cadastre os setores" text="Os setores configurados aparecerão aqui."/>}</div> : <>
+        <div className="drill-summary"><b>{data.departments.find((item) => item.id === departmentId)?.name}</b><span>Média de desempenho dos colaboradores: <strong>{mean(sectorScores)}</strong> / 5 · {sectorScores.length} {plural(sectorScores.length, "avaliação", "avaliações")}</span></div>
         <div className="filter-bar" role="search">
           <label className="filter-field filter-field-grow">Buscar liderança ou colaborador<input type="search" className="filter-input" value={search} placeholder="Nome ou e-mail" onChange={(event) => setSearch(event.target.value)}/></label>
           {search && <button type="button" className="ranking-filter-reset" onClick={() => setSearch("")}>Limpar busca</button>}
         </div>
-        <div className="drill-grid">{leaders.map((leader) => <button key={leader.uid} className={`drill-card ${leader.uid === leaderId ? "selected" : ""}`} onClick={() => setLeaderId(leader.uid)}><span className="eyebrow">2 · LIDERANÇA</span><b>{leader.name}</b><small>{leader.teamIds.map((id) => data.teams.find((team) => team.id === id)?.name ?? id).join(", ")}</small><strong>{mean(submitted.filter((item) => item.type === "LEADER" && item.evaluatedUserId === leader.uid).map((item) => item.averageScore ?? 0))} <small>/ 5 feedback da equipe</small></strong></button>)}{!leaders.length && <EmptyState title="Nenhuma liderança encontrada" text={term ? "Nenhuma liderança corresponde à busca neste setor." : "Associe pessoas líderes às equipes na tela Pessoas e equipes."}/>}</div>
-        {leaderId && <><div className="drill-summary leader-summary"><b>{selectedLeader?.name}</b><span>Panorama da liderança: {leaderScores.length} feedback(s), média {mean(leaderScores)} / 5. Desempenho avaliado pela liderança: média {mean(teamScores)} / 5.</span></div><div className="live-table-wrap"><table className="live-table"><thead><tr><th>3 · Colaborador</th><th>Notas da liderança</th><th>Média</th><th></th></tr></thead><tbody>{visibleEmployees.map((employee) => { const rows = submitted.filter((item) => item.type === "EMPLOYEE" && item.evaluatorId === leaderId && item.evaluatedUserId === employee.uid); return <tr key={employee.uid}><td><b>{employee.name}</b><small className="table-subline">{employee.email}</small></td><td>{rows.length}</td><td>{mean(rows.map((item) => item.averageScore ?? 0))} / 5</td><td><button className="text-link" onClick={() => setSelectedEmployee(employee)}>Ver detalhes ↗</button></td></tr>; })}{!visibleEmployees.length && <tr><td colSpan={4}>{employees.length ? "Nenhum colaborador corresponde à busca." : "Não há colaboradores ativos associados a esta liderança."}</td></tr>}</tbody></table></div></>}
+        <div className="drill-grid">{leaders.map((leader) => <button key={leader.uid} className={`drill-card ${leader.uid === leaderId ? "selected" : ""}`} onClick={() => setLeaderId(leader.uid)}><b>{leader.name}</b><small>{leader.teamIds.map((id) => data.teams.find((team) => team.id === id)?.name ?? id).join(", ")}</small><strong>{mean(submitted.filter((item) => item.type === "LEADER" && item.evaluatedUserId === leader.uid).map((item) => item.averageScore ?? 0))} <small>/ 5 feedback da equipe</small></strong></button>)}{!leaders.length && <EmptyState title="Nenhuma liderança encontrada" text={term ? "Nenhuma liderança corresponde à busca neste setor." : "Associe pessoas líderes às equipes na tela Pessoas e equipes."}/>}</div>
+        {leaderId && <><div className="drill-summary leader-summary"><b>{selectedLeader?.name}</b><span>Panorama da liderança: {leaderScores.length} {plural(leaderScores.length, "feedback", "feedbacks")}, média {mean(leaderScores)} / 5. Desempenho avaliado pela liderança: média {mean(teamScores)} / 5.</span></div><div className="live-table-wrap"><table className="live-table"><thead><tr><th>Colaborador</th><th>Notas da liderança</th><th>Média</th><th></th></tr></thead><tbody>{visibleEmployees.map((employee) => { const rows = submitted.filter((item) => item.type === "EMPLOYEE" && item.evaluatorId === leaderId && item.evaluatedUserId === employee.uid); return <tr key={employee.uid}><td><b>{employee.name}</b><small className="table-subline">{employee.email}</small></td><td>{rows.length}</td><td>{mean(rows.map((item) => item.averageScore ?? 0))} / 5</td><td><button className="text-link" onClick={() => setSelectedEmployee(employee)}>Ver detalhes <ArrowUpRight size={14} aria-hidden="true"/></button></td></tr>; })}{!visibleEmployees.length && <tr><td colSpan={4}>{employees.length ? "Nenhum colaborador corresponde à busca." : "Não há colaboradores ativos associados a esta liderança."}</td></tr>}</tbody></table></div></>}
       </>}
     </section>
   </>;
@@ -1056,7 +1121,7 @@ function PersonalEvaluations({ data, user, refresh, execute }: { data: Workspace
   const criteria = data.criteria.filter((item) => item.active && item.evaluationType === criteriaType).sort((a, b) => a.position - b.position);
 
   if (target) return <>
-    <PageHeading eyebrow={data.member.role === "LEADER" ? "AVALIAÇÃO DE DESEMPENHO" : "FEEDBACK DE LIDERANÇA"} title={target.name} subtitle={data.member.role === "LEADER" ? "Avalie o desempenho da pessoa neste ciclo." : "Compartilhe sua experiência com esta liderança."}/>
+    <PageHeading title={target.name} subtitle={data.member.role === "LEADER" ? "Avalie o desempenho da pessoa neste ciclo." : "Compartilhe sua experiência com esta liderança."}/>
     <AssessmentForm
       key={`${target.uid}-${currentCycle?.id ?? ""}`}
       target={target}
@@ -1086,8 +1151,8 @@ function PersonalEvaluations({ data, user, refresh, execute }: { data: Workspace
   </>;
 
   return <>
-    <PageHeading eyebrow="CICLO DE AVALIAÇÃO" title={data.member.role === "EMPLOYEE" ? "Avaliar minha liderança" : "Avaliar minha equipe"} subtitle={currentCycle ? currentCycle.name : "Não há um ciclo aberto no momento."}/>
-    {!currentCycle ? <EmptyState title="Aguarde um ciclo aberto" text="A administração precisa abrir um ciclo para receber avaliações."/> : !targets.length ? <EmptyState title={data.member.role === "LEADER" ? "Nenhum colaborador na equipe" : "Nenhuma liderança associada"} text="Peça à administração para revisar as equipes associadas ao seu perfil."/> : <div className="live-panel"><div className="live-panel-heading"><div><span className="eyebrow">PESSOAS</span><h2>{targets.length} pessoa(s)</h2></div></div><div className="task-list-live">{targets.map((person) => { const previous = data.evaluations.find((item) => item.status === "SUBMITTED" && item.cycleId === currentCycle.id && item.evaluatedUserId === person.uid); const draft = data.evaluations.find((item) => item.status === "DRAFT" && item.cycleId === currentCycle.id && item.evaluatedUserId === person.uid); return <div className="task-live" key={person.uid}><span className="live-avatar">{initials(person.name)}</span><span className="task-live-copy"><b>{person.name}</b><small>{roleNames[person.role]} · {person.teamIds.map((id) => data.teams.find((team) => team.id === id)?.name ?? id).join(", ") || "Sem equipe"}</small></span>{complete.has(person.uid) ? <span className="status-chip done">Concluída · {previous?.averageScore?.toFixed(1) ?? "—"}</span> : <button className="button button-primary button-small" onClick={() => setTarget(person)}>{draft ? "Continuar rascunho" : "Avaliar"}</button>}</div>; })}</div></div>}
+    <PageHeading title={data.member.role === "EMPLOYEE" ? "Avaliar minha liderança" : "Avaliar minha equipe"} subtitle={currentCycle ? currentCycle.name : "Não há um ciclo aberto no momento."}/>
+    {!currentCycle ? <EmptyState title="Aguarde um ciclo aberto" text="A administração precisa abrir um ciclo para receber avaliações."/> : !targets.length ? <EmptyState title={data.member.role === "LEADER" ? "Nenhum colaborador na equipe" : "Nenhuma liderança associada"} text="Peça à administração para revisar as equipes associadas ao seu perfil."/> : <div className="live-panel"><div className="live-panel-heading"><div><h2>{targets.length} {plural(targets.length, "pessoa", "pessoas")}</h2></div></div><div className="task-list-live">{targets.map((person) => { const previous = data.evaluations.find((item) => item.status === "SUBMITTED" && item.cycleId === currentCycle.id && item.evaluatedUserId === person.uid); const draft = data.evaluations.find((item) => item.status === "DRAFT" && item.cycleId === currentCycle.id && item.evaluatedUserId === person.uid); return <div className="task-live" key={person.uid}><span className="live-avatar">{initials(person.name)}</span><span className="task-live-copy"><b>{person.name}</b><small>{roleNames[person.role]} · {person.teamIds.map((id) => data.teams.find((team) => team.id === id)?.name ?? id).join(", ") || "Sem equipe"}</small></span>{complete.has(person.uid) ? <span className="status-chip done">Concluída · {previous?.averageScore?.toFixed(1) ?? "—"}</span> : <button className="button button-primary button-small" onClick={() => setTarget(person)}>{draft ? "Continuar rascunho" : "Avaliar"}</button>}</div>; })}</div></div>}
     <p className="privacy-note">{data.member.role === "EMPLOYEE" ? "Seu feedback sobre a liderança fica visível apenas para a administração." : "Você verá apenas as avaliações de desempenho que enviou. O feedback sobre sua liderança é privado."}</p>
   </>;
 }
@@ -1450,13 +1515,13 @@ function SurveysPage({ data, execute }: { data: WorkspaceData; execute: (operati
   const hasSurveyFilters = Boolean(surveyTerm || surveyStatusFilter);
 
   return <>
-    <PageHeading eyebrow="FEEDBACK DA EMPRESA" title="Pesquisas" subtitle={isAdmin
+    <PageHeading title="Pesquisas" subtitle={isAdmin
       ? "Crie pesquisas e consulte resultados sem identificação direta; os resultados só aparecem após 5 respostas."
       : "Responda às pesquisas da empresa. O conteúdo não mostra seu nome. Evite incluir nomes ou detalhes que revelem sua identidade."}/>
     {isAdmin ? <>
       <SurveyCreator data={data} execute={execute}/>
       <section className="live-panel">
-        <div className="live-panel-heading"><div><span className="eyebrow">PESQUISAS CRIADAS</span><h2>{hasSurveyFilters ? `${visibleSurveys.length} de ${data.surveys.length}` : "Pesquisas avulsas"}</h2></div></div>
+        <div className="live-panel-heading"><div><h2>{hasSurveyFilters ? `${visibleSurveys.length} de ${data.surveys.length} ${plural(data.surveys.length, "pesquisa", "pesquisas")}` : "Pesquisas criadas"}</h2></div></div>
         <div className="filter-bar" role="search">
           <label className="filter-field filter-field-grow">Buscar<input type="search" className="filter-input" value={surveySearch} placeholder="Nome da pesquisa" onChange={(event) => setSurveySearch(event.target.value)}/></label>
           <label className="filter-field">Situação<select className="filter-input" value={surveyStatusFilter} onChange={(event) => setSurveyStatusFilter(event.target.value as "" | "OPEN" | "SCHEDULED" | "CLOSED")}><option value="">Todas as situações</option><option value="OPEN">Recebendo respostas</option><option value="SCHEDULED">Agendadas</option><option value="CLOSED">Encerradas</option></select></label>
@@ -1485,7 +1550,7 @@ function SurveysPage({ data, execute }: { data: WorkspaceData; execute: (operati
         </div>
       </section>
     </> : <section className="live-panel">
-      <div className="live-panel-heading"><div><span className="eyebrow">PESQUISAS ABERTAS</span><h2>Sua opinião importa</h2></div></div>
+      <div className="live-panel-heading"><div><h2>Sua opinião importa</h2></div></div>
       <div className="config-list">
         {availableSurveys.map((survey) => <article className="survey-admin-card" key={survey.id}>
           <div className="live-panel-heading"><div><h3>{survey.name}</h3><p>Disponível até {formatDate(survey.endsAt)}</p></div></div>
@@ -1582,7 +1647,7 @@ function SurveyAdminCard({ survey, companyId, isOpen, onClose, onDelete }: {
             ? <p className="survey-results-empty">Os resultados serão liberados quando houver pelo menos 5 respostas. Até lá, o conteúdo permanece oculto.</p>
             : <>
             <div className="survey-results-heading">
-              <div><span className="eyebrow">RESULTADOS</span><h4>Respostas por pergunta</h4></div>
+              <div><h4>Respostas por pergunta</h4></div>
               <small>{responses.length} de {totalCount} carregadas</small>
             </div>
             {survey.questions.map((question, index) => <SurveyQuestionResults
@@ -1683,7 +1748,7 @@ function SurveyCreator({ data, execute }: { data: WorkspaceData; execute: (opera
   }
 
   return <section className="live-panel">
-    <div className="live-panel-heading"><div><span className="eyebrow">PESQUISA AVULSA</span><h2>Pergunte algo específico</h2></div></div>
+    <div className="live-panel-heading"><div><h2>Pergunte algo específico</h2></div></div>
     <p className="org-manager-help">As respostas não incluem nome, e-mail ou perfil de quem respondeu. Cada pessoa pode responder uma vez.</p>
     <form className="stack-form" onSubmit={submit}>
       <label>Nome da pesquisa<input required minLength={2} maxLength={100} value={name} onChange={(event) => setName(event.target.value)} placeholder="Ex.: Como podemos melhorar o atendimento?"/></label>
@@ -1875,7 +1940,7 @@ function ChecklistLeader({ data, user, execute }: { data: WorkspaceData; user: U
           const stepNumber = (index + 1) as 1 | 2 | 3;
           return <li key={label} className={step === stepNumber ? "current" : step > stepNumber ? "complete" : ""}>
             <button type="button" disabled={stepNumber >= step} aria-current={step === stepNumber ? "step" : undefined} onClick={() => setStep(stepNumber)}>
-              <span>{step > stepNumber ? "✓" : stepNumber}</span>{label}
+              <span>{step > stepNumber ? <Check size={14} weight="bold" aria-hidden="true"/> : stepNumber}</span>{label}
             </button>
           </li>;
         })}
@@ -2585,7 +2650,7 @@ function AssignmentCard({ assignment, data, user, execute, admin, compact = fals
 function CompanyPage({ data, execute }: { data: WorkspaceData; execute: (operation: () => Promise<unknown>, message: string) => Promise<boolean> }) {
   const [name, setName] = useState(data.company.name);
   const [copied, setCopied] = useState(false);
-  return <><PageHeading eyebrow="DADOS DA EMPRESA" title="Empresa" subtitle="Identificação usada para associar as contas e os registros."/><div className="live-panel settings-card"><div className="live-panel-heading"><div><span className="eyebrow">IDENTIFICAÇÃO</span><h2>Dados da empresa</h2></div></div><form className="stack-form" onSubmit={async (event) => { event.preventDefault(); await execute(() => updateCompanyName(data.company.id ?? "", name), "Nome da empresa atualizado."); }}><label>Nome<input required minLength={2} maxLength={100} value={name} onChange={(event) => setName(event.target.value)}/></label><button className="button button-primary">Salvar nome</button></form><div className="company-id-box"><span><small>ID DA EMPRESA</small><code>{data.company.id}</code></span><button className="button button-outline button-small" onClick={async () => { await navigator.clipboard.writeText(data.company.id ?? ""); setCopied(true); window.setTimeout(() => setCopied(false), 1800); }}>{copied ? "Copiado" : "Copiar ID"}</button></div><p className="subtle-note">Este ID identifica a empresa e é usado para vincular novos cadastros a ela.</p></div></>;
+  return <><PageHeading title="Empresa" subtitle="Identificação usada para associar as contas e os registros."/><div className="live-panel settings-card"><div className="live-panel-heading"><div><h2>Identificação</h2></div></div><form className="stack-form" onSubmit={async (event) => { event.preventDefault(); await execute(() => updateCompanyName(data.company.id ?? "", name), "Nome da empresa atualizado."); }}><label>Nome<input required minLength={2} maxLength={100} value={name} onChange={(event) => setName(event.target.value)}/></label><button className="button button-primary" disabled={name.trim() === data.company.name}>Salvar nome</button></form><div className="company-id-box"><span><small>ID da empresa</small><code>{data.company.id}</code></span><button className="button button-outline button-small" onClick={async () => { try { await navigator.clipboard.writeText(data.company.id ?? ""); setCopied(true); window.setTimeout(() => setCopied(false), 1800); } catch { setCopied(false); } }}>{copied ? "Copiado" : "Copiar ID"}</button></div><p className="subtle-note">Este ID identifica a empresa e é usado para vincular novos cadastros a ela.</p></div></>;
 }
 
 function EvaluationDetailsDialog({ item, data, onClose }: { item: EvaluationWithId; data: WorkspaceData; onClose: () => void }) {
@@ -2601,7 +2666,7 @@ function EvaluationDetailsDialog({ item, data, onClose }: { item: EvaluationWith
   const evaluator = data.members.find((member) => member.uid === item.evaluatorId);
   const evaluatee = data.members.find((member) => member.uid === item.evaluatedUserId);
   return <Modal title="Detalhes da avaliação" onClose={onClose} actions={<button type="button" className="button button-outline" onClick={onClose}>Fechar</button>}>
-    <div className="evaluation-detail-heading"><span>{item.type === "LEADER" ? "Feedback sobre liderança" : "Desempenho de colaborador"}</span><b>{evaluator?.name ?? "Pessoa"} → {evaluatee?.name ?? "Pessoa"}</b><small>Média: {item.averageScore?.toFixed(2) ?? "—"} / 5</small></div>
+    <div className="evaluation-detail-heading"><span>{item.type === "LEADER" ? "Feedback sobre liderança" : "Desempenho de colaborador"}</span><b>{evaluator?.name ?? "Pessoa"} avaliou {evaluatee?.name ?? "Pessoa"}</b><small>Média: {item.averageScore?.toFixed(2) ?? "—"} / 5</small></div>
     {error && <p className="form-alert error" role="alert">{error}</p>}
     {answers ? <div className="evaluation-detail-list">{answers.map((answer) => <div key={answer.id}><span>{data.criteria.find((criterion) => criterion.id === answer.criterionId)?.name ?? "Critério"}</span><b>{answer.score} / 5</b></div>)}</div> : <p>Carregando respostas…</p>}
     {item.comment && <div className="evaluation-detail-comment"><b>Comentário</b><p>{item.comment}</p></div>}
@@ -2611,19 +2676,15 @@ function EvaluationDetailsDialog({ item, data, onClose }: { item: EvaluationWith
 function EvaluationListItem({ item, data, detailed = false, onOpen }: { item: EvaluationWithId; data: WorkspaceData; detailed?: boolean; onOpen?: () => void }) {
   const evaluator = data.members.find((member) => member.uid === item.evaluatorId);
   const evaluatee = data.members.find((member) => member.uid === item.evaluatedUserId);
-  return <div className="evaluation-row"><span className="evaluation-row-type">{item.type === "LEADER" ? "Liderança" : "Desempenho"}</span><span className="evaluation-row-copy"><b>{evaluator?.name ?? "Pessoa"} → {evaluatee?.name ?? "Pessoa"}</b><small>{data.cycles.find((cycle) => cycle.id === item.cycleId)?.name ?? "Ciclo"}</small></span><strong>{item.averageScore?.toFixed(2) ?? "—"}</strong>{detailed && <button className="text-link" onClick={onOpen}>Detalhes ↗</button>}</div>;
+  return <div className="evaluation-row"><span className="evaluation-row-type">{item.type === "LEADER" ? "Liderança" : "Desempenho"}</span><span className="evaluation-row-copy"><b>{evaluator?.name ?? "Pessoa"} avaliou {evaluatee?.name ?? "Pessoa"}</b><small>{data.cycles.find((cycle) => cycle.id === item.cycleId)?.name ?? "Ciclo"}</small></span><strong>{item.averageScore?.toFixed(2) ?? "—"}</strong>{detailed && <button className="text-link" onClick={onOpen}>Detalhes <ArrowUpRight size={14} aria-hidden="true"/></button>}</div>;
 }
 
-function PageHeading({ eyebrow, title, subtitle }: { eyebrow: string; title: string; subtitle: string }) {
-  return <div className="live-page-heading"><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p>{subtitle}</p></div>;
-}
-
-function Stat({ label, value, hint }: { label: string; value: string; hint: string }) {
-  return <article className="live-stat"><small>{label}</small><b>{value}</b><span>{hint}</span></article>;
+function PageHeading({ eyebrow, title, subtitle }: { eyebrow?: string; title: string; subtitle: string }) {
+  return <div className="live-page-heading">{eyebrow && <span className="eyebrow">{eyebrow}</span>}<h1>{title}</h1><p>{subtitle}</p></div>;
 }
 
 function EmptyState({ title, text }: { title: string; text: string }) {
-  return <div className="live-empty"><span>○</span><b>{title}</b><p>{text}</p></div>;
+  return <div className="live-empty"><span><Tray size={20} aria-hidden="true"/></span><b>{title}</b><p>{text}</p></div>;
 }
 
 function initials(name: string) {
@@ -2677,6 +2738,10 @@ function getChecklistPublicationDate(publishOn: "TODAY" | "TOMORROW") {
   const date = new Date();
   if (publishOn === "TOMORROW") date.setDate(date.getDate() + 1);
   return localDateString(date);
+}
+
+function plural(count: number, one: string, many: string) {
+  return count === 1 ? one : many;
 }
 
 function mean(values: number[]) {

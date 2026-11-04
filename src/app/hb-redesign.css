@@ -1,0 +1,1254 @@
+/* ==========================================================================
+   HB Avalia · camada visual (redesign)
+   --------------------------------------------------------------------------
+   Este arquivo concentra a apresentação do redesign: tema, tipografia,
+   componentes visuais e ajustes responsivos. Não altera regras de negócio.
+   Deve ser importado POR ÚLTIMO em layout.tsx, depois de filters.css.
+   Remover o import desfaz apenas os estilos definidos neste arquivo.
+   ========================================================================== */
+
+@import url("https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..700&family=Figtree:wght@400..700&display=swap");
+
+/* --------------------------------------------------------------------------
+   1. Tokens · modo claro
+   -------------------------------------------------------------------------- */
+:root {
+  --display: "Bricolage Grotesque", "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --sans: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --canvas: #f2f5f8;
+  --surface: #ffffff;
+  --surface-soft: #f8fafc;
+  --line: #dfe6ec;
+
+  --ink: #14232d;
+  --text-primary: #14232d;
+  --text-secondary: #33444e;
+  --text-muted: #55636c;
+  --muted: #55636c;
+  --control-border: #b8bec0;
+  --control-text: #17242d;
+
+  /* Azul e laranja do logo Hiper Barão. O azul de ação é um tom mais fundo
+     que o do logo (#278fc2) para garantir contraste de leitura (WCAG AA). */
+  --brand-blue: #1678a9;
+  --brand-blue-dark: #0f5f89;
+  --brand-blue-light: #e6f1f8;
+  --brand-orange: #efa51b;
+  --brand-orange-dark: #85570a;
+  --brand-orange-light: #fdf0d3;
+
+  --hb-action: #1678a9;
+  --hb-action-hover: #0f5f89;
+
+  --shadow-soft: 0 1px 2px rgb(23 36 45 / 5%);
+  --shadow-hover: 0 1px 3px rgb(23 36 45 / 8%);
+}
+
+/* --------------------------------------------------------------------------
+   2. Tokens · modo noturno (mantém a base atual, só ajusta o que é novo)
+   -------------------------------------------------------------------------- */
+:root[data-theme="dark"] {
+  --canvas: #0f171c;
+  --surface: #172229;
+  --surface-soft: #1c2a32;
+  --line: #2d3e48;
+
+  --hb-action: #17699a;
+  --hb-action-hover: #1d7aab;
+
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 30%);
+  --shadow-hover: 0 1px 3px rgb(0 0 0 / 40%);
+}
+
+/* --------------------------------------------------------------------------
+   3. Fundo e tipografia
+   -------------------------------------------------------------------------- */
+body,
+:root[data-theme="dark"] body {
+  background: var(--canvas);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+:root[data-theme="dark"] .auth-shell {
+  background: var(--canvas);
+}
+
+:is(h1, h2, h3,
+  .live-page-heading h1, .live-panel-heading h2, .auth-card h1, .page-heading h1) {
+  font-family: var(--display);
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+
+/* Rótulo pequeno acima dos títulos: deixa de ser caixa-alta espaçada
+   e passa a ser um texto discreto, em caixa normal. O texto não é removido. */
+.eyebrow,
+.welcome-kicker {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+:root[data-theme="dark"] .eyebrow,
+:root[data-theme="dark"] .live-page-heading .eyebrow,
+:root[data-theme="dark"] .live-panel .eyebrow {
+  color: var(--text-muted);
+}
+
+/* --------------------------------------------------------------------------
+   4. Menu lateral e barra superior
+   -------------------------------------------------------------------------- */
+.live-sidebar,
+.live-topbar {
+  background: var(--surface);
+}
+
+.live-company {
+  background: var(--surface);
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.live-nav-label {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+}
+
+.live-nav button {
+  border-radius: 6px;
+  box-shadow: none;
+}
+
+/* Item ativo: fundo suave + marcador laranja à esquerda (sem mudar tamanho). */
+.live-nav button.active {
+  background: var(--brand-blue-light);
+  color: var(--brand-blue-dark);
+  box-shadow: inset 3px 0 0 var(--brand-orange);
+}
+
+:root[data-theme="dark"] .live-nav button.active {
+  background: var(--brand-blue-light);
+  color: var(--brand-blue-dark);
+}
+
+.live-nav button > span:first-child {
+  border-radius: 6px;
+}
+
+.live-avatar {
+  background: var(--brand-blue-light);
+  color: var(--brand-blue-dark);
+}
+
+/* --------------------------------------------------------------------------
+   5. Cartões, painéis e indicadores
+   -------------------------------------------------------------------------- */
+.live-stat,
+.live-panel,
+.ranking-summary article,
+.ranking-filters,
+.configuration-panel,
+.configuration-navigation,
+.admin-checklist-assign {
+  background: var(--surface);
+  border-color: var(--line);
+  box-shadow: none;
+}
+
+.live-stat:hover,
+.live-panel:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+/* Número do indicador ganha o peso visual; o rótulo fica discreto. */
+.live-stat b {
+  font-family: var(--display);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.live-stat > span,
+.live-stat small {
+  color: var(--text-muted);
+}
+
+.ranking-score b,
+.ranking-score,
+.live-table td,
+.live-table th {
+  font-variant-numeric: tabular-nums;
+}
+
+.live-notice {
+  box-shadow: none;
+}
+
+/* --------------------------------------------------------------------------
+   6. Botões (sem gradiente, sem sombra, sem "pulo" ao passar o mouse)
+   -------------------------------------------------------------------------- */
+.button-primary:not(:disabled) {
+  background: var(--hb-action);
+  border-color: var(--hb-action);
+  box-shadow: none;
+}
+
+.button-primary:hover:not(:disabled) {
+  background: var(--hb-action-hover);
+  border-color: var(--hb-action-hover);
+  box-shadow: none;
+  transform: none;
+}
+
+.button-outline {
+  box-shadow: none;
+  border-radius: 6px;
+}
+
+.checklist-add-task {
+  background: var(--hb-action);
+  box-shadow: none;
+}
+
+/* --------------------------------------------------------------------------
+   7. Campos de formulário (só borda e raio; o anel de foco continua o atual)
+   -------------------------------------------------------------------------- */
+:is(.live-app, .auth-shell) :where(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+  border-radius: 6px;
+}
+
+/* --------------------------------------------------------------------------
+   8. Barras de progresso: cor sólida em vez de degradê
+   -------------------------------------------------------------------------- */
+.assignment-progress-track > span,
+.development-progress-track span,
+.survey-rating-track > span,
+:root[data-theme="dark"] .assignment-progress-track > span {
+  background: var(--brand-blue);
+}
+
+:root[data-theme="dark"] .development-progress-track span,
+:root[data-theme="dark"] .survey-rating-track > span {
+  background: var(--brand-blue);
+}
+
+/* --------------------------------------------------------------------------
+   9. Destaques pontuais
+   -------------------------------------------------------------------------- */
+.ranking-row-top-1 {
+  background: var(--brand-orange-light);
+}
+
+:root[data-theme="dark"] .ranking-row-top-1 {
+  background: #2b2415;
+}
+
+.assignment-card-expired {
+  background: #fff8f5;
+}
+
+:root[data-theme="dark"] .assignment-card-expired {
+  background: var(--surface);
+}
+
+.live-status-dot {
+  box-shadow: none;
+}
+
+/* --------------------------------------------------------------------------
+   10. Abas (config / checklists / login): planas, sem relevo
+   -------------------------------------------------------------------------- */
+.expanding-tabs,
+.expanding-tab,
+.expanding-tab.active,
+.auth-tabs button.selected,
+.admin-checklist-mode button.selected,
+.configuration-workspace,
+.configuration-structure-grid > .live-panel,
+.survey-admin-card {
+  box-shadow: none;
+}
+
+/* --------------------------------------------------------------------------
+   11. Tela de login
+   -------------------------------------------------------------------------- */
+.auth-shell {
+  background: var(--hb-action);
+}
+
+:root[data-theme="dark"] .auth-shell {
+  background: var(--canvas);
+}
+
+/* Cartão branco sobre o azul da marca, com a faixa laranja do logo no topo (só cor, sem mudar tamanho) */
+.auth-card {
+  background: var(--surface);
+  border-color: var(--line);
+  border-radius: 10px;
+  box-shadow: inset 0 4px 0 var(--brand-orange);
+}
+
+:root:not([data-theme="dark"]) .auth-shell > .theme-toggle:focus-visible {
+  outline-color: #ffffff;
+}
+
+/* --------------------------------------------------------------------------
+   Contraste: textos secundários que usavam cinzas-esverdeados claros
+   (contraste de 2,7 a 4,1:1) passam a usar o tom de texto secundário
+   (mínimo de 4,5:1, padrão WCAG AA). Só modo claro; o noturno já tem regras próprias.
+   -------------------------------------------------------------------------- */
+:root:not([data-theme="dark"]) :is(
+  .live-topbar > div:first-child,
+  :is(label, legend) small,
+  .quick-links small,
+  .task-live-copy small,
+  .assignment-heading small,
+  .admin-progress-group-heading small,
+  .admin-progress-group-footer span,
+  .admin-progress-stats span,
+  .admin-progress-stats small,
+  .checklist-template-summary small,
+  .assignment-items .check-item span,
+  .drill-card small,
+  .live-panel li small,
+  .checklist-models-count,
+  .configuration-entity-count,
+  .expanding-tab-label small,
+  .configuration-intro p,
+  .live-table thead th,
+  .ranking-summary article small,
+  .ranking-place
+) {
+  color: var(--text-muted);
+}
+
+:root:not([data-theme="dark"]) :is(
+  .evaluation-row-type,
+  .ranking-group-total,
+  .quick-links button > span:first-child,
+  .configuration-structure-note b
+) {
+  color: var(--brand-blue-dark);
+}
+
+/* Botões do topo (Modo noturno / Sair / Atualizar): texto legível */
+:root:not([data-theme="dark"]) .live-topbar-actions .button span {
+  color: var(--text-secondary);
+}
+
+/* Botão "Remover": vermelho um pouco mais fundo para o texto branco ficar legível */
+:root:not([data-theme="dark"]) .button-danger {
+  border-color: #c23a4d;
+  background: #c23a4d;
+}
+
+:root:not([data-theme="dark"]) .button-danger:hover:not(:disabled) {
+  border-color: #a52e3f;
+  background: #a52e3f;
+}
+
+/* --------------------------------------------------------------------------
+   Modo noturno: correções de legibilidade que já existiam.
+   Nomes, títulos de cartões e textos em negrito estavam em cinza-escuro sobre
+   fundo escuro (contraste 1,3 a 1,6:1, quase invisíveis). Passam a usar a cor
+   de texto principal do tema. Só afeta elementos sem classe própria.
+   -------------------------------------------------------------------------- */
+:root[data-theme="dark"] .live-app :is(b, strong, h2, h3, h4, h5):not([class]) {
+  color: var(--text-primary);
+}
+
+:root[data-theme="dark"] :is(
+  b.assignment-count,
+  .drill-card strong,
+  .admin-progress-group-heading b,
+  .admin-progress-pending summary
+) {
+  color: var(--brand-blue);
+}
+
+:root[data-theme="dark"] :is(
+  .admin-progress-group-footer span,
+  .admin-progress-stats span,
+  .admin-progress-stats small,
+  .checklist-models-count,
+  .checklist-template-summary small,
+  .live-panel li small
+) {
+  color: var(--text-muted);
+}
+
+/* Últimos textos secundários com contraste abaixo do mínimo */
+:root:not([data-theme="dark"]) :is(
+  .live-panel li button > span:not(:first-child),
+  .checklist-task-heading small,
+  .checklist-publication-controls p,
+  .company-id-box small,
+  .checklist-step-copy span,
+  .live-empty span
+) {
+  color: var(--text-muted);
+}
+
+:root[data-theme="dark"] .checklist-step-copy span {
+  color: var(--text-secondary);
+}
+
+/* Caixa do ID da empresa (modo noturno): ficava clara com texto claro; agora segue o tema escuro */
+:root[data-theme="dark"] .company-id-box {
+  background: var(--surface-soft);
+  border-color: var(--line);
+}
+
+:root[data-theme="dark"] .company-id-box code {
+  color: var(--text-primary);
+}
+
+:root[data-theme="dark"] .company-id-box small {
+  color: var(--text-muted);
+}
+
+/* Passo atual do assistente de checklist (modo noturno): número escuro sobre azul claro */
+:root[data-theme="dark"] li.current button > span {
+  color: #0d1a22;
+}
+
+/* --------------------------------------------------------------------------
+   Ícones sem caixa tingida: o ícone fica sozinho, na cor da marca.
+   (Ícone dentro de quadrado colorido é um dos "sinais de IA" mais comuns.)
+   Avatar, selo de posição do ranking e contador de pendências continuam,
+   porque carregam informação.
+   -------------------------------------------------------------------------- */
+.live-nav button > span:first-child:not(.live-nav-badge),
+.configuration-entity-icon,
+.ranking-summary-icon,
+:root[data-theme="dark"] .live-nav button > span:first-child:not(.live-nav-badge),
+:root[data-theme="dark"] .live-nav button.active > span:first-child:not(.live-nav-badge),
+:root[data-theme="dark"] .configuration-entity-icon,
+:root[data-theme="dark"] .ranking-summary-icon {
+  background: transparent;
+}
+
+.live-nav button > span:first-child:not(.live-nav-badge),
+.configuration-entity-icon,
+.ranking-summary-icon {
+  color: var(--brand-blue);
+}
+
+/* --------------------------------------------------------------------------
+   Movimento reduzido: quem pede menos animação no sistema operacional
+   não vê transições. Não muda nada para os demais usuários.
+   -------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ==========================================================================
+   Visão geral da administradora (componentes novos)
+   Estas classes só existem nos elementos novos do Workspace.tsx.
+   ========================================================================== */
+.overview-attention,
+.overview-setup,
+.overview-recent {
+  margin-bottom: 13px;
+}
+
+.overview-attention h2,
+.overview-setup h2 {
+  margin: 0 0 12px;
+  font-size: 17px;
+}
+
+.attention-list,
+.setup-steps {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.attention-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 12px;
+  row-gap: 2px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: 6px;
+  background: var(--surface-soft);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.attention-item.alert { border-left-color: var(--brand-orange); }
+.attention-item.info { border-left-color: var(--brand-blue); }
+
+.attention-item b {
+  grid-column: 1;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.attention-item small {
+  grid-column: 1;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.attention-item > span {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  color: var(--brand-blue);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.attention-item:hover,
+.setup-steps button:hover {
+  border-color: var(--brand-blue);
+}
+
+.attention-item:focus-visible,
+.setup-steps button:focus-visible {
+  outline: 3px solid var(--brand-blue);
+  outline-offset: 2px;
+}
+
+.attention-clear {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.overview-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0 0 13px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.overview-summary > div {
+  min-width: 0;
+  padding: 14px 18px;
+}
+
+.overview-summary > div + div { border-left: 1px solid var(--line); }
+
+.overview-summary dt {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.overview-summary dd {
+  margin: 4px 0 2px;
+  color: var(--text-primary);
+  font: 650 26px/1.1 var(--display);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.overview-summary small {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.setup-steps { counter-reset: step; }
+.setup-steps li { counter-increment: step; }
+
+.setup-steps button {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  column-gap: 10px;
+  width: 100%;
+  padding: 11px 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-soft);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.setup-steps button::before {
+  content: counter(step);
+  grid-row: 1 / span 2;
+  color: var(--brand-blue);
+  font: 650 15px/1.3 var(--display);
+}
+
+.setup-steps b { font-size: 15px; font-weight: 650; }
+.setup-steps small { color: var(--text-muted); font-size: 13px; }
+
+@media (max-width: 760px) {
+  .overview-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .overview-summary > div:nth-child(odd) { border-left: 0; }
+  .overview-summary > div:nth-child(n + 3) { border-top: 1px solid var(--line); }
+}
+
+/* ==========================================================================
+   Pessoas e equipes: linha em modo leitura + painel de edição
+   (classes novas, só existem nos elementos novos do Workspace.tsx)
+   ========================================================================== */
+.member-edit-row > td {
+  padding: 0;
+  background: var(--surface-soft);
+}
+
+.member-edit {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px 16px;
+  padding: 16px 18px 18px;
+}
+
+.member-edit label,
+.member-edit-teams {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.member-edit-teams { grid-column: 1 / -1; }
+
+.member-edit-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 760px) {
+  .member-edit { grid-template-columns: minmax(0, 1fr); }
+}
+
+.live-app .member-edit input.current-position-input:not([type="checkbox"]):not([type="radio"]),
+.live-app .member-edit .table-select {
+  width: 100%;
+  min-height: 38px;
+}
+
+/* Seta dos filtros (modo noturno): o fundo do campo redefinia o tamanho da seta e ela
+   aparecia como um triângulo enorme. Aqui só se restaura a geometria original da seta. */
+:root[data-theme="dark"] .live-app select.filter-input:not([multiple]) {
+  background-position: calc(100% - 16px) 50%, calc(100% - 12px) 50%;
+  background-repeat: no-repeat;
+  background-size: 4px 4px;
+}
+
+/* Tabela de pessoas no celular: cada pessoa vira um cartão, sem rolagem lateral */
+@media (max-width: 760px) {
+  .member-table,
+  .member-table tbody,
+  .member-table tr,
+  .member-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .member-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .member-table tr:not(.member-edit-row) {
+    padding: 12px 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .member-table td {
+    padding: 3px 0;
+    border: 0;
+  }
+
+  .member-table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .member-table .row-actions { padding-top: 6px; }
+}
+
+/* ==========================================================================
+   Ranking: resumo em faixa, barra de nota por pessoa e texto do método discreto
+   ========================================================================== */
+.overview-summary-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+.ranking-bar {
+  display: block;
+  height: 4px;
+  margin-top: 7px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.ranking-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--brand-blue);
+}
+
+/* Poucas avaliações: a barra fica mais clara, para a nota não parecer mais firme do que é. */
+.ranking-bar.is-low > i { opacity: 0.45; }
+
+.ranking-method-note {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-muted);
+}
+
+:root:not([data-theme="dark"]) .ranking-row-top-2,
+:root:not([data-theme="dark"]) .ranking-row-top-3 {
+  background: var(--surface);
+}
+
+@media (max-width: 760px) {
+  .overview-summary-3 { grid-template-columns: minmax(0, 1fr); }
+  .overview-summary-3 > div + div { border-left: 0; border-top: 1px solid var(--line); }
+}
+
+:root[data-theme="dark"] .ranking-method-note {
+  background: transparent;
+  border-color: transparent;
+}
+
+/* ==========================================================================
+   Avaliações: caminho de navegação (setor / liderança) no lugar dos rótulos numerados
+   ========================================================================== */
+.drill-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.drill-breadcrumb button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--brand-blue);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.drill-breadcrumb [aria-current="page"] {
+  color: var(--text-primary);
+  font-weight: 650;
+  text-decoration: none;
+  cursor: default;
+}
+
+.drill-breadcrumb button:focus-visible {
+  outline: 3px solid var(--brand-blue);
+  outline-offset: 2px;
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Faixas de resumo do drill-down: tom neutro da marca (antes um verde que sobrou da paleta antiga) */
+:root:not([data-theme="dark"]) .drill-summary {
+  background: var(--surface-soft);
+  border-color: var(--line);
+}
+
+:root:not([data-theme="dark"]) .privacy-note {
+  background: var(--brand-blue-light);
+  border-color: var(--brand-blue);
+  color: var(--text-secondary);
+}
+
+/* ==========================================================================
+   Neutros e marcadores: restos da paleta verde antiga
+   Bordas, trilhas e caixas que ainda usavam cinzas-esverdeados fixos passam a usar
+   os tons neutros do tema. Regras com a mesma força das originais (classe simples):
+   estados como selecionado, hover e foco continuam valendo por cima.
+   ========================================================================== */
+.company-logo-image,
+.live-sidebar-bottom,
+.evaluation-row,
+.task-live,
+.assignment-card,
+.checklist-template-entry,
+.configuration-entity-row,
+.survey-admin-card,
+.admin-progress-group,
+.drill-card,
+.survey-audience,
+.survey-card-metrics,
+.company-id-box,
+.survey-question-editor,
+.admin-checklist-mode {
+  border-color: var(--line);
+}
+
+.assignment-progress-track {
+  background: var(--line);
+}
+
+:root:not([data-theme="dark"]) :is(.company-id-box, .checklist-step-copy, .admin-checklist-mode) {
+  background: var(--surface-soft);
+}
+
+:root:not([data-theme="dark"]) .company-id-box code {
+  color: var(--text-primary);
+}
+
+.live-app input[type="checkbox"],
+.live-app input[type="radio"] {
+  accent-color: var(--brand-blue);
+}
+
+:root:not([data-theme="dark"]) .live-app h3:not([class]) {
+  color: var(--text-primary);
+}
+
+/* Login (modo claro): textos pequenos com contraste de leitura (mínimo 4,5:1) */
+:root:not([data-theme="dark"]) .auth-shell .theme-toggle span {
+  color: var(--text-secondary);
+}
+
+:root:not([data-theme="dark"]) .auth-company-brand small {
+  color: var(--text-muted);
+}
+
+:root:not([data-theme="dark"]) .auth-tabs button {
+  color: var(--text-muted);
+}
+
+:root:not([data-theme="dark"]) .auth-tabs button.selected {
+  color: var(--brand-blue-dark);
+}
+
+/* Ícones no lugar de símbolos de texto (↗, ✓, ○) */
+.text-link > svg {
+  vertical-align: -2px;
+  margin-left: 2px;
+}
+
+.live-empty > span > svg,
+.checklist-home-complete-mark > svg {
+  display: block;
+  margin: auto;
+}
+
+/* ==========================================================================
+   12. Legibilidade: nenhum texto abaixo de 11px (antes havia 8, 9, 10 e 11px)
+   Gerado a partir dos seletores existentes; só aumenta o tamanho da fonte.
+   ========================================================================== */
+
+/* Textos de 8–9px passam a 11px; 10–11px passam a 12px */
+.assignment-heading small,
+.auth-company-brand > span small,
+.company-id-box small,
+.config-list small,
+.drill-card>small,
+.evaluation-row-copy small,
+.evaluation-row-type,
+.eyebrow,
+.inline-form label small,
+.live-account small,
+.live-nav-label,
+.live-page-heading .eyebrow,
+.live-table th,
+.ranking-count,
+.ranking-low-sample,
+.ranking-person small,
+.ranking-summary article small,
+.stack-form label small,
+.table-subline,
+.team-assignment-options legend small {
+  font-size: 11px;
+}
+
+.action-badge,
+.action-card>span:nth-child(2) small,
+.admin-checklist-review small,
+.admin-checklist-review-people > b,
+.admin-progress-group-footer > span,
+.admin-progress-group-heading small,
+.admin-progress-pending,
+.admin-progress-pending li,
+.admin-progress-pending li small,
+.admin-progress-stats > div > small,
+.admin-progress-stats > div > span,
+.assigned-checklist-heading small,
+.assignment-card-compact .assignment-heading small,
+.assignment-items .check-item,
+.auth-card>.eyebrow,
+.brand-copy small,
+.check-item small,
+.check-progress-ring span,
+.checklist-add-task,
+.checklist-assignment-section-heading > span,
+.checklist-card p,
+.checklist-card-foot,
+.checklist-home-completed,
+.checklist-home-count,
+.checklist-home-empty p,
+.checklist-progress-item,
+.checklist-recipient b,
+.checklist-recipient small,
+.checklist-scope-option b,
+.checklist-scope-option small,
+.checklist-selected-summary b,
+.checklist-selected-summary span,
+.checklist-status,
+.checklist-step-copy span,
+.checklist-task-heading small,
+.checklist-task-row>span,
+.comment-label textarea,
+.comment-label>span,
+.compact-card>div:nth-child(2) small,
+.company-id-box code,
+.config-list b,
+.configuration-stage .config-list .configuration-entity-count,
+.configuration-stage-total,
+.content-foot,
+.criterion-index,
+.criterion-row .more-button,
+.criterion-state,
+.criterion-tabs button,
+.cycle-badge,
+.cycle-feature>div:first-child>small,
+.cycle-score .text-link,
+.cycle-score>span,
+.demo-banner,
+.demo-form label,
+.demo-form-note,
+.development-completed-count,
+.draft-pill,
+.drill-card-copy small,
+.drill-card-score small,
+.drill-summary,
+.employee-pending-copy small,
+.employee-pending-copy>span,
+.employee-privacy p,
+.empty-inline,
+.evaluatee>div small,
+.evaluatee>div span,
+.evaluation-detail-comment b,
+.evaluation-detail-comment p,
+.evaluation-detail-heading>small,
+.evaluation-detail-heading>span,
+.evaluation-detail-list>div,
+.evaluation-note p,
+.evaluation-note small,
+.evaluation-row-copy b,
+.expanding-tab-label small,
+.field-hint,
+.filter-button,
+.filter-field,
+.filter-select,
+.float-card,
+.form-error,
+.form-footer>span,
+.history-row small,
+.leader-highlight p,
+.leader-side>span,
+.live-account b,
+.live-app .evaluation-row-type,
+.live-app .eyebrow,
+.live-app .live-nav-label,
+.live-app .live-page-heading .eyebrow,
+.live-app .live-panel .eyebrow,
+.live-app .live-table th,
+.live-app .ranking-low-sample,
+.live-app input.current-position-input:not([type="checkbox"]):not([type="radio"]),
+.live-brand small,
+.live-company small,
+.live-empty p,
+.live-nav button > span.live-nav-badge,
+.live-nav button.active > span.live-nav-badge,
+.live-panel .eyebrow,
+.live-select,
+.live-stat small,
+.live-stat span,
+.live-table,
+.live-table td>b,
+.live-topbar>div,
+.nav-label,
+.org-manager-help,
+.org-structure-note p,
+.panel-toolbar .text-link,
+.panel-toolbar>div>span,
+.pending-copy small,
+.pending-empty,
+.pending-more,
+.pending-person .avatar,
+.pending-pill,
+.pending-tag,
+.performance-privacy,
+.person-cell small,
+.privacy-note,
+.promotion-competency-scale-label,
+.promotion-evidence h4 span,
+.promotion-indicator-name span,
+.promotion-item-points small,
+.promotion-legacy-score-note,
+.promotion-pending-competency small,
+.promotion-request-details span,
+.promotion-result-grid span,
+.promotion-saved-sections li small,
+.promotion-score-input,
+.promotion-score-summary span,
+.quick-links b .quick-link-pending,
+.quick-links small,
+.ranking-filters label,
+.ranking-group .live-panel-heading p,
+.ranking-group-total,
+.ranking-method-note,
+.ranking-place,
+.ranking-toggle,
+.rating-buttons button,
+.rating-guide>span,
+.rating-name span,
+.row-action-hint,
+.scale-legend,
+.sector-formula p,
+.sector-formula small,
+.settings-heading>div>span,
+.stat-card>small,
+.status-chip,
+.status-done,
+.status-inactive-text,
+.status-pending,
+.subtle-note,
+.subtle-note code,
+.survey-answer-search,
+.survey-partial-note,
+.survey-question-number,
+.survey-question-result-heading small,
+.survey-rating-average span,
+.survey-rating-row > b,
+.survey-results-heading > small,
+.table-panel th,
+.task-card>span:nth-child(2) small,
+.task-done,
+.task-due,
+.task-live-copy small,
+.team-assignment-help,
+.team-assignment-option,
+.team-assignment-options legend b,
+.team-assignment-picker,
+.team-assignment-picker .empty-inline,
+.team-footnote,
+.team-name small,
+.team-trend,
+.tiny-avatar,
+.welcome-kicker {
+  font-size: 12px;
+}
+
+@media (max-width: 460px) {
+  .configuration-stage-total {
+    font-size: 12px;
+  }
+}
+@media (max-width: 600px) {
+  .admin-checklist-stepper button {
+    font-size: 12px;
+  }
+}
+@media (max-width:390px) {
+  .live-stat small,
+  .live-topbar {
+    font-size: 11px;
+  }
+}
+@media (max-width:760px) {
+  .drill-card-score small,
+  .live-brand small {
+    font-size: 11px;
+  }
+}
+@media (max-width:760px) {
+  .action-badge,
+  .action-card>span:nth-child(2) small,
+  .content-foot,
+  .cycle-score .text-link,
+  .demo-banner,
+  .drill-card>b,
+  .employee-pending-copy small,
+  .evaluation-note p,
+  .form-footer .button,
+  .live-nav button,
+  .panel-toolbar>div>span,
+  .pending-copy b,
+  .pending-tag,
+  .rating-name b,
+  .rating-name span,
+  .role-preview select,
+  .scale-legend,
+  .stat-card>p,
+  .stat-card>small,
+  .task-due,
+  .team-name b,
+  .team-name small,
+  .team-score,
+  .team-trend,
+  .topbar-right .role-preview select {
+    font-size: 12px;
+  }
+}
+
+/* ==========================================================================
+   13. Raios de borda padronizados: cartões 12px, controles 8px
+   (pílulas e círculos, como chips e avatares, ficam como estão)
+   ========================================================================== */
+
+/* Cartões e painéis (antes 13–24px) → 8px; controles (antes 9–11px) → 6px */
+.action-card,
+.action-icon,
+.admin-checklist-assign .admin-checklist-all-toggle,
+.admin-checklist-assign .admin-checklist-step-body > .button,
+.admin-checklist-assign .stack-form > .button,
+.admin-checklist-member-picker,
+.admin-checklist-mode,
+.admin-checklist-review > div,
+.admin-progress-group,
+.admin-progress-stats > div,
+.brand-mark,
+.button,
+.checklist-assignment-section-empty,
+.checklist-deadline-hint,
+.checklist-icon,
+.company-switch,
+.configuration-entity-icon,
+.configuration-stage .empty-inline,
+.cycle-config-row,
+.cycle-feature,
+.development-editor-fields input,
+.development-goal-editor-fields input,
+.development-goal-editor-fields textarea,
+.development-goal-number,
+.drill-card-icon,
+.employee-pending,
+.evaluation-drill-card,
+.evaluation-note,
+.filter-input,
+.help-card,
+.illustration-chart,
+.leader-highlight,
+.live-sidebar-bottom .signout-button,
+.nav-count,
+.org-structure-note,
+.panel,
+.pending-illustration,
+.pending-pill,
+.performance-empty-icon,
+.promotion-indicator-row,
+.promotion-pending-competency,
+.promotion-request-details > div,
+.promotion-request-form textarea,
+.promotion-result-grid > div,
+.promotion-review-actions textarea,
+.promotion-score-input input,
+.promotion-score-summary > div,
+.ranking-select-wrap select,
+.sector-formula,
+.stat-card,
+.survey-answer-card,
+.survey-answer-search input,
+.survey-question-empty,
+.survey-question-number,
+.survey-results-empty,
+.survey-results-loading,
+.task-card,
+select:not([multiple]) {
+  border-radius: 6px;
+}
+
+.assignment-card,
+.auth-card,
+.auth-mark,
+.checklist-home-list .assignment-card-compact,
+.checklist-home-panel,
+.configuration-stage,
+.configuration-workspace,
+.development-approved-banner,
+.development-completed-group,
+.development-goal-card,
+.development-goal-editor,
+.development-member-card,
+.live-brand .auth-mark,
+.live-company,
+.live-notice,
+.live-panel,
+.live-stat,
+.promotion-request-card,
+.promotion-request-form,
+.promotion-result-panel,
+.promotion-status-banner,
+.quick-links button,
+.ranking-filters,
+.ranking-row,
+.ranking-summary article,
+.ranking-summary-icon,
+.survey-admin-card,
+.survey-question-editor,
+.survey-question-result,
+.team-assignment-options {
+  border-radius: 8px;
+}
+
+@media (max-width: 760px) {
+  .live-nav button {
+    border-radius: 6px;
+  }
+}
+@media (max-width: 760px) {
+  .auth-card,
+  .live-panel,
+  .live-stat {
+    border-radius: 8px;
+  }
+}

@@ -5,6 +5,7 @@ import "./checklists.css";
 import "./expanding-design.css";
 import "./brand-palette.css";
 import "./filters.css";
+import "./hb-redesign.css";
 import { ThemeProvider } from "../components/ThemeProvider";
 import Script from "next/script";
 
