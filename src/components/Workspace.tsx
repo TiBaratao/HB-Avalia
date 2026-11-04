@@ -33,10 +33,12 @@ import {
   ChatCircleText,
   GearSix,
   House,
+  List,
   SlidersHorizontal,
   SignOut,
   Trophy,
   UsersThree,
+  X,
 } from "@phosphor-icons/react";
 import ExpandingTabs from "./ui/expanding-tabs";
 import { ConfirmButton, Modal } from "./ui/modal";
@@ -130,6 +132,10 @@ export function Workspace({ user, companyId, onSignOut }: { user: User; companyI
   const [notice, setNotice] = useState<Notice>(null);
   const [section, setSection] = useState<Section>("overview");
   const [selectedMemberId, setSelectedMemberId] = useState("");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const mobileMenuRef = useRef<HTMLElement>(null);
+  const mobileMenuTriggerRef = useRef<HTMLButtonElement>(null);
+  const mobileMenuCloseRef = useRef<HTMLButtonElement>(null);
 
   const refresh = useCallback(async (quiet = false) => {
     if (quiet) setRefreshing(true);
@@ -153,6 +159,42 @@ export function Workspace({ user, companyId, onSignOut }: { user: User; companyI
     const timeout = window.setTimeout(() => void refresh(true), nextRefresh.getTime() - Date.now());
     return () => window.clearTimeout(timeout);
   }, [refresh, data]);
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    const menuTrigger = mobileMenuTriggerRef.current;
+    document.body.style.overflow = "hidden";
+    mobileMenuCloseRef.current?.focus();
+
+    const focusableSelector = 'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMobileMenuOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      const focusable = Array.from(mobileMenuRef.current?.querySelectorAll<HTMLElement>(focusableSelector) ?? []);
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const focusIsOutsideMenu = !mobileMenuRef.current?.contains(document.activeElement);
+      if (event.shiftKey && (document.activeElement === first || focusIsOutsideMenu)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || focusIsOutsideMenu)) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
+      menuTrigger?.focus();
+    };
+  }, [mobileMenuOpen]);
 
   async function execute(operation: () => Promise<unknown>, successMessage: string) {
     setNotice(null);
@@ -215,13 +257,15 @@ export function Workspace({ user, companyId, onSignOut }: { user: User; companyI
 
   return (
     <div className="live-app">
-      <aside className="live-sidebar">
+      {mobileMenuOpen && <button type="button" className="mobile-menu-backdrop" aria-label="Fechar menu" onClick={() => setMobileMenuOpen(false)}/>}
+      <aside id="workspace-navigation" ref={mobileMenuRef} className={`live-sidebar${mobileMenuOpen ? " is-open" : ""}`} role={mobileMenuOpen ? "dialog" : undefined} aria-modal={mobileMenuOpen || undefined} aria-label={mobileMenuOpen ? "Menu de navegação" : undefined}>
+        <button ref={mobileMenuCloseRef} type="button" className="mobile-menu-close" onClick={() => setMobileMenuOpen(false)}><X size={19} aria-hidden="true"/><span>Fechar menu</span></button>
         <div className="live-company"><CompanyLogo className="company-logo-sidebar"/><span><b>{data.company.name}</b><small>{roleNames[role]}</small></span></div>
         <p className="live-nav-label">MENU</p>
         <nav className="live-nav" aria-label="Navegação principal">
           {nav.map((item) => {
             const pendingCount = item.id === "evaluations" ? pendingEvaluationCount : item.id === "checklists" ? pendingChecklistCount : 0;
-            return <button key={item.id} type="button" aria-current={section === item.id ? "page" : undefined} className={section === item.id ? "active" : ""} onClick={() => { setSection(item.id); setSelectedMemberId(""); setNotice(null); }}><span aria-hidden="true">{sectionIcons[item.id]}</span>{item.label}{pendingCount > 0 && <span className="live-nav-badge" aria-label={`${pendingCount} pendente${pendingCount === 1 ? "" : "s"}`}>{pendingCount}</span>}</button>;
+            return <button key={item.id} type="button" aria-current={section === item.id ? "page" : undefined} className={section === item.id ? "active" : ""} onClick={() => { setSection(item.id); setSelectedMemberId(""); setNotice(null); setMobileMenuOpen(false); }}><span aria-hidden="true">{sectionIcons[item.id]}</span>{item.label}{pendingCount > 0 && <span className="live-nav-badge" aria-label={`${pendingCount} pendente${pendingCount === 1 ? "" : "s"}`}>{pendingCount}</span>}</button>;
           })}
         </nav>
         <div className="live-sidebar-bottom">
@@ -237,7 +281,16 @@ export function Workspace({ user, companyId, onSignOut }: { user: User; companyI
         </div>
       </aside>
       <main className="live-main">
-        <header className="live-topbar"><div><span className="live-status-dot"/> Conectado</div><div className="live-topbar-actions"><ThemeToggle/><button type="button" className="button button-outline button-small topbar-signout" aria-label="Sair da conta" title="Sair da conta" onClick={onSignOut}><SignOut size={15} weight="regular"/><span>Sair</span></button><button type="button" className="button button-outline button-small" onClick={() => void refresh(true)} disabled={refreshing}>{refreshing ? "Atualizando…" : "Atualizar"}</button></div></header>
+        <header className="live-topbar">
+          <button ref={mobileMenuTriggerRef} type="button" className="mobile-menu-trigger" aria-expanded={mobileMenuOpen} aria-controls="workspace-navigation" onClick={() => setMobileMenuOpen(true)}>
+            <List size={20} weight="bold" aria-hidden="true"/>
+            <CompanyLogo className="company-logo-sidebar"/>
+            <span className="mobile-menu-heading"><b>{data.company.name}</b><small>{nav.find((item) => item.id === section)?.label ?? "Menu"}</small></span>
+            <span className="mobile-menu-trigger-label">Menu</span>
+          </button>
+          <div className="live-connection-status"><span className="live-status-dot"/> Conectado</div>
+          <div className="live-topbar-actions"><ThemeToggle/><button type="button" className="button button-outline button-small topbar-signout" aria-label="Sair da conta" title="Sair da conta" onClick={onSignOut}><SignOut size={15} weight="regular"/><span>Sair</span></button><button type="button" className="button button-outline button-small" onClick={() => void refresh(true)} disabled={refreshing}>{refreshing ? "Atualizando…" : "Atualizar"}</button></div>
+        </header>
         <div className="live-content">
           {notice && <div className={`live-notice ${notice.kind}`} role="status">{notice.text}</div>}
           {loadError && <div className="live-notice error" role="alert">{loadError}</div>}
