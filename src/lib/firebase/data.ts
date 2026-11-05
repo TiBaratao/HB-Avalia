@@ -422,7 +422,6 @@ async function requestServerApi(url: string, method: "POST" | "PATCH", input: ob
 export async function submitPromotionRequest(input: {
   companyId: string;
   employeeId: string;
-  targetPosition: string;
   justification: string;
   indicators: Array<{ id: string; percentage: number }>;
   competencies: Array<{ id: string; score: number }>;

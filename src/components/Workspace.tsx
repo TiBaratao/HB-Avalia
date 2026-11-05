@@ -13,6 +13,7 @@ import {
   type PromotionEvaluationPreview,
   type PromotionIndicatorInput,
 } from "../../functions/promotion-scoring";
+import { getPromotionCareerProgress } from "../../functions/promotion-career-path";
 import { CompanyLogo } from "./CompanyLogo";
 import { ThemeToggle } from "./ThemeProvider";
 import {
@@ -607,9 +608,12 @@ function LeaderDevelopmentPage({ data, onOpenProfile }: { data: WorkspaceData; o
       <div className="live-panel-heading"><div><span className="eyebrow">SUA EQUIPE</span><h2>{employees.length} colaborador(es)</h2></div></div>
       {employees.length ? <div className="development-member-list">{employees.map((employee) => {
         const plan = data.developmentPlans.find((item) => item.employeeId === employee.uid);
+        const careerProgress = getPromotionCareerProgress(employee.positionTitle);
         const latestRequest = data.promotionRequests.filter((request) => request.employeeId === employee.uid).sort((a, b) => timestampMillis(b.submittedAt) - timestampMillis(a.submittedAt))[0];
         return <article className="development-member-card" key={employee.uid}>
-          <div className="development-member-identity"><span className="live-avatar" aria-hidden="true">{initials(employee.name)}</span><div><h3>{employee.name}</h3><p>{employee.positionTitle || "Cargo atual não informado"}{plan ? ` · Próximo cargo: ${plan.targetPosition}` : " · Sem avaliação enviada"}</p></div></div>
+          <div className="development-member-identity"><span className="live-avatar" aria-hidden="true">{initials(employee.name)}</span><div><h3>{employee.name}</h3><p>{employee.positionTitle || "Cargo atual não informado"}{plan?.status === "PROMOTED"
+            ? careerProgress.nextPosition ? ` · Próximo cargo: ${careerProgress.nextPosition}` : " · Último cargo da sequência"
+            : plan ? ` · Próximo cargo: ${plan.targetPosition}` : " · Sem avaliação enviada"}</p></div></div>
           <div className="development-member-status">{latestRequest?.status === "PENDING" ? <span className="status-chip pending"><Clock size={14}/> Indicação em análise</span> : latestRequest?.status === "REJECTED" ? <span className="status-chip pending"><XCircle size={14}/> Indicação reprovada</span> : latestRequest?.status === "APPROVED" || plan?.status === "PROMOTED" ? <span className="status-chip done"><CheckCircle size={14}/> Promoção aprovada</span> : <span className="status-chip">Avaliação não enviada</span>}</div>
           <button type="button" className="button button-outline button-small" onClick={() => onOpenProfile(employee.uid)}>{plan?.status === "PROMOTED" ? "Criar outro PDI" : plan ? "Gerenciar PDI" : "Criar PDI"} <ArrowLeft className="development-open-arrow" size={15}/></button>
         </article>;
@@ -637,7 +641,6 @@ function DevelopmentProfilePage({ data, employee, execute, onBack }: { data: Wor
       .filter((request) => request.employeeId === employee.uid)
       .sort((a, b) => timestampMillis(b.submittedAt) - timestampMillis(a.submittedAt))[0]
     : undefined;
-  const [targetPosition, setTargetPosition] = useState(plan?.status === "PROMOTED" ? "" : plan?.targetPosition ?? "");
   const [justification, setJustification] = useState("");
   const [promotionIndicators, setPromotionIndicators] = useState(() => restorePromotionEvaluationInputs().indicators);
   const [promotionCompetencies, setPromotionCompetencies] = useState(() => restorePromotionEvaluationInputs().competencies);
@@ -651,6 +654,7 @@ function DevelopmentProfilePage({ data, employee, execute, onBack }: { data: Wor
   const profileEmployee = employee;
 
   const isAdmin = data.member.role === "ADMIN";
+  const careerProgress = getPromotionCareerProgress(profileEmployee.positionTitle);
   const sharedTeamIds = profileEmployee.teamIds.filter((teamId) => data.member.teamIds.includes(teamId));
   const isOwner = isAdmin || sharedTeamIds.length > 0;
   const canManagePdi = !isAdmin && isOwner && data.developmentAccessAvailable;
@@ -670,12 +674,11 @@ function DevelopmentProfilePage({ data, employee, execute, onBack }: { data: Wor
   const promotionPreview = promotionResultPreview(promotionIndicators, promotionCompetencies);
 
   async function submitRequest() {
-    if (!promotionPreview?.complete || targetPosition.trim().length < 2 || justification.trim().length < 20) return;
+    if (!promotionPreview?.complete || !careerProgress.nextPosition || justification.trim().length < 20) return;
     setRequesting(true);
     await execute(() => submitPromotionRequest({
       companyId: data.company.id ?? "",
       employeeId: profileEmployee.uid,
-      targetPosition,
       justification,
       indicators: promotionIndicators.map(({ id, percentage }) => ({ id, percentage: Number(percentage) })),
       competencies: promotionCompetencies.map(({ id, score }) => ({ id, score: Number(score) })),
@@ -695,11 +698,13 @@ function DevelopmentProfilePage({ data, employee, execute, onBack }: { data: Wor
       <div className="live-panel-heading"><div><span className="eyebrow">AVALIAÇÃO DE PROMOÇÃO/PDI</span><h2>Indicadores e competências</h2></div></div>
       {pendingRequest && <div className="promotion-status-banner"><Clock size={18}/><span><b>Indicação em análise</b><small>Enviada em {formatDateLike(pendingRequest.submittedAt)}. O andamento é restrito à liderança e à administração.</small></span></div>}
       {ownRequests.filter((request) => request.status !== "PENDING").slice(0, 2).map((request) => <div className={`promotion-status-banner ${request.status === "APPROVED" ? "is-approved" : "is-rejected"}`} key={request.id}>{request.status === "APPROVED" ? <CheckCircle size={18}/> : <XCircle size={18}/>}<span><b>{request.status === "APPROVED" ? "Indicação aprovada" : "Indicação reprovada"}</b><small>{request.adminNote || "Sem observação da administração."}</small></span></div>)}
-      {plan?.status === "PROMOTED" && !pendingRequest && canManagePdi && <div className="form-alert"><b>Nova indicação para promoção</b><p>Este colaborador já foi promovido anteriormente. Para indicar uma nova promoção (para um cargo ainda mais alto), preencha o novo cargo desejado (diferente do cargo atual), a justificativa e a avaliação abaixo.</p></div>}
+      {plan?.status === "PROMOTED" && !pendingRequest && canManagePdi && <div className="form-alert"><b>Nova indicação para promoção</b><p>Este colaborador já foi promovido. O próximo cargo será definido automaticamente pela sequência de carreira.</p></div>}
       {latestSavedPromotion && <PromotionScoringSnapshot request={latestSavedPromotion}/>}
-      {!pendingRequest && canManagePdi && <PromotionRequestForm
-          targetPosition={targetPosition}
-          onTargetPositionChange={setTargetPosition}
+      {!pendingRequest && canManagePdi && !careerProgress.nextPosition && <div className="form-alert error" role="alert">{careerProgress.isFinalPosition
+        ? "Este colaborador já está no último cargo da sequência de carreira."
+        : "O cargo atual não está na sequência de carreira. Peça à administração para atualizar o cargo antes de iniciar o PDI."}</div>}
+      {!pendingRequest && canManagePdi && careerProgress.nextPosition && <p className="development-inline-note">Progressão automática: <b>{careerProgress.currentPosition}</b> → <b>{careerProgress.nextPosition}</b>. O cargo só muda após a aprovação da administração.</p>}
+      {!pendingRequest && canManagePdi && careerProgress.nextPosition && <PromotionRequestForm
           justification={justification}
           onJustificationChange={setJustification}
           indicators={promotionIndicators}
@@ -720,8 +725,6 @@ function DevelopmentProfilePage({ data, employee, execute, onBack }: { data: Wor
 }
 
 function PromotionRequestForm({
-  targetPosition,
-  onTargetPositionChange,
   justification,
   onJustificationChange,
   indicators,
@@ -734,8 +737,6 @@ function PromotionRequestForm({
   requesting,
   onSubmit,
 }: {
-  targetPosition: string;
-  onTargetPositionChange: (value: string) => void;
   justification: string;
   onJustificationChange: (value: string) => void;
   indicators: Array<{ id: string; percentage: PromotionIndicatorEntry }>;
@@ -749,8 +750,6 @@ function PromotionRequestForm({
   onSubmit: () => void;
 }) {
   const readyToSubmit = Boolean(preview?.complete)
-    && targetPosition.trim().length >= 2
-    && targetPosition.trim().length <= 100
     && justification.trim().length >= 20
     && !requesting;
   const formatPoints = (points?: number) => points === undefined
@@ -758,11 +757,7 @@ function PromotionRequestForm({
     : `${points.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })} p.p.`;
 
   return <div className="promotion-request-form">
-    <p>Preencha a avaliação de Promoção/PDI. O percentual representa o atingimento da meta, não o valor bruto do indicador.</p>
-    <label>Cargo desejado
-      <input value={targetPosition} onChange={(event) => onTargetPositionChange(event.target.value)} maxLength={100} minLength={2} placeholder="Ex.: Analista Sênior"/>
-      <small>Informe o cargo para o qual o colaborador está sendo avaliado.</small>
-    </label>
+    <p>Preencha a avaliação de Promoção/PDI para o próximo cargo da sequência. O percentual representa o atingimento da meta, não o valor bruto do indicador.</p>
     <label>Por que este colaborador está apto a progredir de cargo?
       <textarea value={justification} onChange={(event) => onJustificationChange(event.target.value)} maxLength={1500} minLength={20} rows={4} placeholder="Descreva resultados, responsabilidades assumidas e sinais de prontidão para o próximo cargo."/>
       <small>{justification.trim().length}/1.500 caracteres (mínimo 20)</small>

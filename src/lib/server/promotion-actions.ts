@@ -6,6 +6,7 @@ import {
   type PromotionCompetencyInput,
   type PromotionIndicatorInput,
 } from "../../../functions/promotion-scoring";
+import { getPromotionCareerProgress } from "../../../functions/promotion-career-path";
 import {
   getActiveSharedTeamIds,
   getMemberTeamIds,
@@ -100,10 +101,6 @@ export async function submitPromotionRequest(uid: string, payload: JsonObject): 
 }> {
   const companyId = requireString(payload.companyId, "Empresa");
   const employeeId = requireString(payload.employeeId, "Colaborador");
-  const targetPosition = requireString(payload.targetPosition, "Cargo desejado", 100);
-  if (targetPosition.length < 2) {
-    throw new PromotionApiError("Informe o cargo desejado (2 a 100 caracteres).", 400);
-  }
   const justification = typeof payload.justification === "string" ? payload.justification.trim() : "";
   if (justification.length < 20 || justification.length > 1500) {
     throw new PromotionApiError("Explique em 20 a 1.500 caracteres por que a pessoa está apta à promoção.", 400);
@@ -155,6 +152,14 @@ export async function submitPromotionRequest(uid: string, payload: JsonObject): 
       if (!sharedTeamIds.length) {
         throw new PromotionApiError("O colaborador não está em uma equipe compartilhada ativa.", 409);
       }
+      const careerProgress = getPromotionCareerProgress(employee.positionTitle);
+      if (!careerProgress.currentPosition) {
+        throw new PromotionApiError("O cargo atual não está configurado na sequência de carreira. Peça à administração para atualizar o cargo antes de iniciar o PDI.", 409);
+      }
+      if (!careerProgress.nextPosition) {
+        throw new PromotionApiError("Este colaborador já está no último cargo da sequência de carreira.", 409);
+      }
+      const targetPosition = careerProgress.nextPosition;
       if (statusSnapshot.exists && statusSnapshot.data()?.status === "PENDING") {
         throw new PromotionApiError("Já existe uma indicação em análise para este colaborador.", 409);
       }
@@ -294,6 +299,13 @@ export async function decidePromotionRequest(
       if (!employeeSnapshot.exists || employeeSnapshot.data()?.status !== "ACTIVE"
         || employeeSnapshot.data()?.role !== "EMPLOYEE") {
         throw new PromotionApiError("O colaborador não está ativo para receber a promoção.", 409);
+      }
+      const careerProgress = getPromotionCareerProgress(employeeSnapshot.data()?.positionTitle);
+      if (!careerProgress.currentPosition) {
+        throw new PromotionApiError("O cargo atual não está configurado na sequência de carreira. Atualize o cargo antes de decidir esta indicação.", 409);
+      }
+      if (careerProgress.nextPosition !== promotion.targetPosition) {
+        throw new PromotionApiError("O cargo atual mudou desde o envio. A indicação precisa ser revisada com o próximo cargo da sequência.", 409);
       }
       if (!planSnapshot.exists || planSnapshot.data()?.status !== "ACTIVE"
         || planSnapshot.data()?.leaderId !== promotion.leaderId

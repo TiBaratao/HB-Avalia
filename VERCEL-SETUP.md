@@ -40,6 +40,12 @@ Server routes verify Firebase ID tokens and write with the Firebase Admin SDK. E
 - `expiresAt` on the rate-limit records uses Firestore TTL. Verify the TTL field override for `customerFeedbackRateLimits` is active in project `hb-avalia2`; TTL cleanup is asynchronous. Do not remove the Admin SDK service-account secret from Vercel.
 - Rotating a QR immediately invalidates its previous URL. Reprint any physical material after rotation. Deactivating a cashier QR rejects new submissions but preserves its history.
 
+## Promotion career path
+
+- Promotion targets follow one fixed sequence: Atendente de Açougue Júnior → Atendente de Açougue Pleno → Atendente de Açougue Elite → Atendente de Açougue Elite Nível 1 → Açougueiro Júnior → Açougueiro Pleno → Açougueiro Elite → Açougueiro Elite Nível 1 → Desossador.
+- The PDI screen displays the next position based on the employee's current title; leaders cannot manually skip or choose a different position. The server independently derives and validates the next position when submitting and approving a promotion.
+- Approving a promotion updates the employee's title, and the next PDI advances one step. Employees at the final level cannot be promoted further in this sequence. Titles outside the sequence must be corrected by an administrator before a PDI can be submitted.
+
 ## Scheduled checklist publication
 
 `/api/cron/publish-scheduled-checklists` replaces the previous Netlify scheduled function. It runs on the Node.js runtime and reuses `functions/scheduled-checklists-core.js`, keeping the daily, weekly, and monthly recurrence rules and idempotent assignment IDs.

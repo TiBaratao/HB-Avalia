@@ -26,6 +26,10 @@ const {
   getActiveSharedTeamIds,
   isActivePromotionAdmin,
 } = require("../promotion-security");
+const {
+  PROMOTION_CAREER_PATH,
+  getPromotionCareerProgress,
+} = require("../promotion-career-path");
 
 const criteria = [
   { id: "quality", active: true },
@@ -389,6 +393,26 @@ test("promotion requests exclude conventional scores and comments while retainin
   assert.deepEqual(request.evaluations, []);
   assert.equal(request.evaluationEvidenceVersion, 2);
   assert.deepEqual(request.promotionResult, { finalScore: 92, classification: "Excelente" });
+});
+
+test("promotion career path resolves the next role sequentially and normalizes accents", () => {
+  assert.equal(PROMOTION_CAREER_PATH.length, 9);
+  assert.deepEqual(getPromotionCareerProgress("Atendente de Açougue Junior"), {
+    currentPosition: "Atendente de Açougue Júnior",
+    nextPosition: "Atendente de Açougue Pleno",
+    isFinalPosition: false,
+  });
+  assert.equal(getPromotionCareerProgress("Açougueiro Elite Nivel 1").nextPosition, "Desossador");
+  assert.deepEqual(getPromotionCareerProgress("Desossador"), {
+    currentPosition: "Desossador",
+    nextPosition: null,
+    isFinalPosition: true,
+  });
+  assert.deepEqual(getPromotionCareerProgress("Gerente"), {
+    currentPosition: null,
+    nextPosition: null,
+    isFinalPosition: false,
+  });
 });
 
 test("confidential evaluation snapshots retain only the admin evidence projection", () => {
