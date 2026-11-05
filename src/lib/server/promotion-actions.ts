@@ -253,6 +253,66 @@ export async function submitPromotionRequest(uid: string, payload: JsonObject): 
   }
 }
 
+function timestampToIso(value: unknown): string | null {
+  if (value && typeof value === "object" && "toDate" in value && typeof value.toDate === "function") {
+    const date = value.toDate();
+    return date instanceof Date && Number.isFinite(date.getTime()) ? date.toISOString() : null;
+  }
+  if (value instanceof Date) return Number.isFinite(value.getTime()) ? value.toISOString() : null;
+  if (typeof value === "string" || typeof value === "number") {
+    const date = new Date(value);
+    return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+  }
+  return null;
+}
+
+export async function listPromotionHistory(uid: string, companyIdValue: unknown, employeeIdValue: unknown) {
+  const companyId = requireString(companyIdValue, "Empresa");
+  const employeeId = requireString(employeeIdValue, "Colaborador");
+  const db = getAdminFirestore();
+  const companyRef = db.collection("companies").doc(companyId);
+  const [leaderSnapshot, employeeSnapshot] = await Promise.all([
+    companyRef.collection("members").doc(uid).get(),
+    companyRef.collection("members").doc(employeeId).get(),
+  ]);
+  const leader = leaderSnapshot.data();
+  const employee = employeeSnapshot.data();
+  if (!leaderSnapshot.exists || leader?.status !== "ACTIVE" || leader.role !== "LEADER") {
+    throw new PromotionApiError("Somente uma liderança ativa pode consultar o histórico de promoção.", 403);
+  }
+  if (!employeeSnapshot.exists || employee?.status !== "ACTIVE" || employee.role !== "EMPLOYEE"
+    || !getActiveSharedTeamIds(leader, employee).length) {
+    throw new PromotionApiError("Você não pode consultar o histórico deste colaborador.", 403);
+  }
+
+  const historySnapshot = await companyRef.collection("promotionRequests")
+    .where("employeeId", "==", employeeId)
+    .get();
+  return {
+    history: historySnapshot.docs
+      .sort((first, second) => (timestampToIso(second.get("submittedAt")) ?? "")
+        .localeCompare(timestampToIso(first.get("submittedAt")) ?? ""))
+      .map((snapshot) => {
+        const request = snapshot.data();
+        return {
+          id: snapshot.id,
+          employeeId: request.employeeId,
+          leaderId: request.leaderId,
+          developmentPlanId: request.developmentPlanId,
+          targetPosition: request.targetPosition,
+          justification: request.justification,
+          indicators: request.indicators,
+          competencies: request.competencies,
+          promotionResult: request.promotionResult,
+          status: request.status,
+          adminNote: request.adminNote,
+          submittedAt: timestampToIso(request.submittedAt),
+          decidedAt: timestampToIso(request.decidedAt),
+        };
+      }),
+  };
+}
+
 export async function decidePromotionRequest(
   uid: string,
   requestId: string,

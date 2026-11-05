@@ -78,6 +78,7 @@ import {
   removeMember,
   calculateChecklistDueDate,
   loadEvaluationAnswers,
+  loadPromotionHistory,
   loadSurveyResponsePage,
   MIN_SURVEY_RESPONSES_FOR_RESULTS,
   loadWorkspaceData,
@@ -641,6 +642,11 @@ function DevelopmentProfilePage({ data, employee, execute, onBack }: { data: Wor
       .filter((request) => request.employeeId === employee.uid)
       .sort((a, b) => timestampMillis(b.submittedAt) - timestampMillis(a.submittedAt))[0]
     : undefined;
+  const [promotionHistory, setPromotionHistory] = useState<Array<DocumentWithId<PromotionRequestDocument>>>([]);
+  const [historyRequested, setHistoryRequested] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
+  const [historyAttempt, setHistoryAttempt] = useState(0);
   const [justification, setJustification] = useState("");
   const [promotionIndicators, setPromotionIndicators] = useState(() => restorePromotionEvaluationInputs().indicators);
   const [promotionCompetencies, setPromotionCompetencies] = useState(() => restorePromotionEvaluationInputs().competencies);
@@ -650,6 +656,26 @@ function DevelopmentProfilePage({ data, employee, execute, onBack }: { data: Wor
     setPromotionIndicators(savedInputs.indicators);
     setPromotionCompetencies(savedInputs.competencies);
   }, [latestSavedPromotion]);
+  useEffect(() => {
+    if (!historyRequested || data.member.role !== "LEADER" || !employee) return;
+    let active = true;
+    setHistoryLoading(true);
+    setHistoryError("");
+    loadPromotionHistory(data.company.id ?? "", employee.uid)
+      .then((history) => {
+        if (!active) return;
+        setPromotionHistory(history.sort((first, second) =>
+          timestampMillis(second.submittedAt) - timestampMillis(first.submittedAt)));
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        setHistoryError(error instanceof Error ? error.message : "Não foi possível carregar o histórico de promoção.");
+      })
+      .finally(() => {
+        if (active) setHistoryLoading(false);
+      });
+    return () => { active = false; };
+  }, [historyRequested, historyAttempt, data.member.role, data.company.id, employee]);
   if (!employee) return <><button type="button" className="text-link" onClick={onBack}><ArrowLeft size={16}/> Voltar para equipe</button><EmptyState title="Colaborador não encontrado" text="Volte à equipe e selecione uma pessoa ativa."/></>;
   const profileEmployee = employee;
 
@@ -659,6 +685,8 @@ function DevelopmentProfilePage({ data, employee, execute, onBack }: { data: Wor
   const isOwner = isAdmin || sharedTeamIds.length > 0;
   const canManagePdi = !isAdmin && isOwner && data.developmentAccessAvailable;
   const ownRequests = data.promotionRequests.filter((request) => request.employeeId === profileEmployee.uid).sort((a, b) => timestampMillis(b.submittedAt) - timestampMillis(a.submittedAt));
+  const displayedPromotionHistory = isAdmin ? ownRequests : promotionHistory;
+  const pendingRequestCount = ownRequests.filter((request) => request.status === "PENDING").length;
   const pendingRequest = ownRequests.find((request) => request.status === "PENDING");
   const evaluationSnapshots = data.evaluations
     .filter((evaluation) => evaluation.type === "EMPLOYEE" && evaluation.evaluatedUserId === employee.uid && evaluation.status === "SUBMITTED" && typeof evaluation.averageScore === "number")
@@ -692,14 +720,34 @@ function DevelopmentProfilePage({ data, employee, execute, onBack }: { data: Wor
     {data.developmentAccessAvailable === false && <div className="live-notice error" role="alert">O Firestore recusou a leitura dos dados de PDI para este perfil. Recarregue a página; se persistir, confira as permissões da conta nas regras do projeto.</div>}
     {data.restrictedPromotionHistory && <div className="live-notice" role="status">Registros antigos que incluem evidências de avaliações convencionais estão restritos à administração. As avaliações originais permanecem preservadas.</div>}
     {!isAdmin && !sharedTeamIds.length && <div className="form-alert error">Este colaborador não está mais em uma equipe compartilhada com você. O PDI fica disponível somente para liderança da equipe.</div>}
-    {plan?.status === "PROMOTED" && <div className="development-approved-banner"><CheckCircle size={20}/><span><b>Promoção aprovada</b><small>O cargo do colaborador foi atualizado para {employee.positionTitle || plan.targetPosition}.</small></span></div>}
     {plan && !isOwner && <div className="form-alert">Este PDI é gerenciado por outra liderança. Você pode acompanhar a avaliação, mas não enviar uma nova indicação.</div>}
     <section className="live-panel development-panel">
+      <details className="promotion-history-accordion">
+        <summary onClick={() => {
+          if (!isAdmin && !historyRequested) setHistoryRequested(true);
+        }}>
+          <span>Histórico de promoção</span>
+          <span className="development-completed-count">{isAdmin ? displayedPromotionHistory.length : historyLoading ? "…" : displayedPromotionHistory.length}</span>
+          <small>{pendingRequestCount ? `${pendingRequestCount} indicação em análise` : "Indicações, decisões e avaliações anteriores"}</small>
+        </summary>
+        <div className="promotion-history-list">
+          {historyLoading && <p className="development-inline-note" role="status">Carregando histórico…</p>}
+          {historyError && <div className="live-notice error" role="alert">{historyError}<button type="button" className="button button-outline button-small" onClick={() => setHistoryAttempt((attempt) => attempt + 1)}>Tentar novamente</button></div>}
+          {!historyLoading && !historyError && displayedPromotionHistory.length ? displayedPromotionHistory.map((request) => <article className="promotion-history-entry" key={request.id}>
+            <header>
+              <div><h3>{request.targetPosition}</h3><p>Enviada em {formatDateLike(request.submittedAt)}{request.decidedAt ? ` · Decidida em ${formatDateLike(request.decidedAt)}` : ""}</p></div>
+              <span className={`status-chip ${request.status === "APPROVED" ? "done" : "pending"}`}>
+                {request.status === "PENDING" ? "Em análise" : request.status === "APPROVED" ? "Aprovada" : "Reprovada"}
+              </span>
+            </header>
+            {request.justification && <div className="promotion-history-note"><b>Justificativa da liderança</b><p>{request.justification}</p></div>}
+            {request.adminNote && <div className="promotion-history-note"><b>Observação da administração</b><p>{request.adminNote}</p></div>}
+            <PromotionScoringSnapshot request={request}/>
+          </article>) : !historyLoading && !historyError && <p className="development-inline-note">Ainda não há indicações de promoção para este colaborador.</p>}
+        </div>
+      </details>
       <div className="live-panel-heading"><div><span className="eyebrow">AVALIAÇÃO DE PROMOÇÃO/PDI</span><h2>Indicadores e competências</h2></div></div>
-      {pendingRequest && <div className="promotion-status-banner"><Clock size={18}/><span><b>Indicação em análise</b><small>Enviada em {formatDateLike(pendingRequest.submittedAt)}. O andamento é restrito à liderança e à administração.</small></span></div>}
-      {ownRequests.filter((request) => request.status !== "PENDING").slice(0, 2).map((request) => <div className={`promotion-status-banner ${request.status === "APPROVED" ? "is-approved" : "is-rejected"}`} key={request.id}>{request.status === "APPROVED" ? <CheckCircle size={18}/> : <XCircle size={18}/>}<span><b>{request.status === "APPROVED" ? "Indicação aprovada" : "Indicação reprovada"}</b><small>{request.adminNote || "Sem observação da administração."}</small></span></div>)}
       {plan?.status === "PROMOTED" && !pendingRequest && canManagePdi && <div className="form-alert"><b>Nova indicação para promoção</b><p>Este colaborador já foi promovido. O próximo cargo será definido automaticamente pela sequência de carreira.</p></div>}
-      {latestSavedPromotion && <PromotionScoringSnapshot request={latestSavedPromotion}/>}
       {!pendingRequest && canManagePdi && !careerProgress.nextPosition && <div className="form-alert error" role="alert">{careerProgress.isFinalPosition
         ? "Este colaborador já está no último cargo da sequência de carreira."
         : "O cargo atual não está na sequência de carreira. Peça à administração para atualizar o cargo antes de iniciar o PDI."}</div>}

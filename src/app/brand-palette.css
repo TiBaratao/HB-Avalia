@@ -2097,11 +2097,20 @@ body {
 .development-progress-overview > div:first-child { display: flex; align-items: baseline; gap: 12px; }
 .development-goal-list { display: grid; gap: 10px; }
 .development-goal-card { display: flex; align-items: center; gap: 14px; padding: 15px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); }
-.development-completed-group { overflow: hidden; border: 1px solid var(--line); border-radius: 13px; background: var(--surface-soft); }
-.development-completed-group > summary, .promotion-completed-details > summary { display: flex; min-height: 46px; align-items: center; gap: 10px; padding: 10px 14px; color: var(--ink); font-size: 13px; font-weight: 700; list-style: none; cursor: pointer; }
-.development-completed-group > summary::-webkit-details-marker, .promotion-completed-details > summary::-webkit-details-marker { display: none; }
-.development-completed-group > summary::after, .promotion-completed-details > summary::after { margin-left: auto; color: var(--muted); content: "+"; font-size: 18px; line-height: 1; }
-.development-completed-group[open] > summary::after, .promotion-completed-details[open] > summary::after { content: "−"; }
+.development-completed-group, .promotion-history-accordion { overflow: hidden; border: 1px solid var(--line); border-radius: 13px; background: var(--surface-soft); }
+.promotion-history-accordion { margin-bottom: 18px; }
+.development-completed-group > summary, .promotion-completed-details > summary, .promotion-history-accordion > summary { display: flex; min-height: 46px; align-items: center; gap: 10px; padding: 10px 14px; color: var(--ink); font-size: 13px; font-weight: 700; list-style: none; cursor: pointer; }
+.development-completed-group > summary::-webkit-details-marker, .promotion-completed-details > summary::-webkit-details-marker, .promotion-history-accordion > summary::-webkit-details-marker { display: none; }
+.development-completed-group > summary::after, .promotion-completed-details > summary::after, .promotion-history-accordion > summary::after { margin-left: auto; color: var(--muted); content: "+"; font-size: 18px; line-height: 1; }
+.development-completed-group[open] > summary::after, .promotion-completed-details[open] > summary::after, .promotion-history-accordion[open] > summary::after { content: "−"; }
+.promotion-history-accordion > summary small { color: var(--muted); font-size: 12px; font-weight: 500; }
+.promotion-history-list { display: grid; gap: 12px; padding: 0 12px 12px; }
+.promotion-history-entry { display: grid; gap: 12px; min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); }
+.promotion-history-entry > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.promotion-history-entry h3 { margin: 0; color: var(--ink); font-size: 14px; }
+.promotion-history-entry header p, .promotion-history-note p { margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.promotion-history-note { color: var(--ink); font-size: 12px; }
+.promotion-history-note p { white-space: pre-wrap; }
 .development-completed-count { display: inline-grid; min-width: 24px; height: 24px; place-items: center; padding: 0 7px; border-radius: 999px; background: var(--brand-blue-light); color: var(--brand-blue-dark); font-size: 11px; }
 .development-completed-list { display: grid; gap: 8px; padding: 0 10px 10px; }
 .development-completed-list .development-goal-card { padding: 12px; }

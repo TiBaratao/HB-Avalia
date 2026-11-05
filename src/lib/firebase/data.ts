@@ -301,7 +301,6 @@ export async function loadWorkspaceData(companyId: string, uid: string): Promise
       && person.status === "ACTIVE"
       && person.teamIds.some((teamId) => member.teamIds.includes(teamId)))
     : [];
-  let restrictedPromotionHistory = false;
   const [planRead, requestRead] = await Promise.all([
     withOptionalAccess<DocumentSnapshot<DocumentData>[]>(
       member.role === "ADMIN" ? "Leitura dos PDIs" : member.role === "LEADER" ? "Leitura dos PDIs da equipe" : "Leitura do seu PDI",
@@ -345,6 +344,7 @@ export async function loadWorkspaceData(companyId: string, uid: string): Promise
       [],
     ),
   ]);
+  let restrictedPromotionHistory = false;
   const developmentPlanSnapshots = planRead.value;
   const promotionRequestSnapshots = requestRead.value;
   const promotionRequests = await Promise.all(promotionRequestSnapshots.map(async (snapshot) => {
@@ -390,7 +390,7 @@ export async function loadWorkspaceData(companyId: string, uid: string): Promise
   };
 }
 
-async function requestServerApi(url: string, method: "POST" | "PATCH", input: object): Promise<Record<string, unknown>> {
+async function requestServerApi(url: string, method: "GET" | "POST" | "PATCH", input?: object): Promise<Record<string, unknown>> {
   const user = getFirebaseAuth().currentUser;
   if (!user) throw new Error("Faça login para continuar.");
   const idToken = await user.getIdToken();
@@ -398,9 +398,9 @@ async function requestServerApi(url: string, method: "POST" | "PATCH", input: ob
     method,
     headers: {
       Authorization: `Bearer ${idToken}`,
-      "Content-Type": "application/json",
+      ...(input ? { "Content-Type": "application/json" } : {}),
     },
-    body: JSON.stringify(input),
+    ...(input ? { body: JSON.stringify(input) } : {}),
   });
 
   let payload: unknown;
@@ -417,6 +417,46 @@ async function requestServerApi(url: string, method: "POST" | "PATCH", input: ob
     throw new Error(typeof result.error === "string" ? result.error : "Não foi possível processar a solicitação.");
   }
   return result;
+}
+
+export async function loadPromotionHistory(companyId: string, employeeId: string): Promise<Array<DocumentWithId<PromotionRequestDocument>>> {
+  const search = new URLSearchParams({ companyId, employeeId });
+  const result = await requestServerApi(`/api/promotion-requests/history?${search.toString()}`, "GET");
+  if (!Array.isArray(result.history)) throw new Error("O servidor retornou um histórico de promoções inválido.");
+  return result.history.map((item) => {
+    if (typeof item !== "object" || item === null || Array.isArray(item)) {
+      throw new Error("O servidor retornou um registro de promoção inválido.");
+    }
+    const record = item as Record<string, unknown>;
+    if (typeof record.id !== "string"
+      || typeof record.employeeId !== "string"
+      || typeof record.leaderId !== "string"
+      || typeof record.targetPosition !== "string"
+      || typeof record.justification !== "string"
+      || (record.status !== "PENDING" && record.status !== "APPROVED" && record.status !== "REJECTED")) {
+      throw new Error("O servidor retornou um registro de promoção inválido.");
+    }
+    return {
+      id: record.id,
+      employeeId: record.employeeId,
+      leaderId: record.leaderId,
+      developmentPlanId: typeof record.developmentPlanId === "string" ? record.developmentPlanId : record.employeeId,
+      targetPosition: record.targetPosition,
+      justification: record.justification,
+      averageScore: null,
+      evaluationEvidenceVersion: 2,
+      indicators: Array.isArray(record.indicators) ? record.indicators as PromotionRequestDocument["indicators"] : [],
+      competencies: Array.isArray(record.competencies) ? record.competencies as PromotionRequestDocument["competencies"] : [],
+      promotionResult: typeof record.promotionResult === "object" && record.promotionResult !== null
+        ? record.promotionResult as PromotionRequestDocument["promotionResult"]
+        : null,
+      evaluations: [],
+      status: record.status,
+      adminNote: typeof record.adminNote === "string" ? record.adminNote : undefined,
+      submittedAt: typeof record.submittedAt === "string" ? record.submittedAt : null,
+      decidedAt: typeof record.decidedAt === "string" ? record.decidedAt : null,
+    };
+  });
 }
 
 export async function submitPromotionRequest(input: {
