@@ -775,9 +775,12 @@ function DevelopmentProfilePage({ data, employee, execute, onBack }: { data: Wor
                 {request.status === "PENDING" ? "Em análise" : request.status === "APPROVED" ? "Aprovada" : "Reprovada"}
               </span>
             </header>
-            {request.justification && <div className="promotion-history-note"><b>Justificativa da liderança</b><p>{request.justification}</p></div>}
-            {request.adminNote && <div className="promotion-history-note"><b>Observação da administração</b><p>{request.adminNote}</p></div>}
-            <PromotionScoringSnapshot request={request}/>
+            <details className="promotion-completed-details">
+              <summary>Ver detalhes da avaliação anterior</summary>
+              {request.justification && <div className="promotion-history-note"><b>Justificativa da liderança</b><p>{request.justification}</p></div>}
+              {request.adminNote && <div className="promotion-history-note"><b>Observação da administração</b><p>{request.adminNote}</p></div>}
+              <PromotionScoringSnapshot request={request}/>
+            </details>
           </article>) : !historyLoading && !historyError && <p className="development-inline-note">Ainda não há indicações de promoção para este colaborador.</p>}
         </div>
       </details>
