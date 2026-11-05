@@ -12,6 +12,7 @@ import {
   setDoc,
   Timestamp,
   updateDoc,
+  writeBatch,
 } from "firebase/firestore";
 
 const projectId = "demo-hb-avalia-rules";
@@ -102,6 +103,51 @@ test("leaders can save draft answers but cannot submit a score from the client",
   await assertFails(updateDoc(evaluation, {
     status: "SUBMITTED", averageScore: 4, submittedAt: serverTimestamp(), updatedAt: serverTimestamp(),
   }));
+});
+
+test("self enrollment and first-company bootstrap allow the configured default position title", async () => {
+  const selfEnrollDb = testEnv.authenticatedContext("new-member", { email: "new-member@example.test" }).firestore();
+  const selfEnrollBatch = writeBatch(selfEnrollDb);
+  selfEnrollBatch.set(doc(selfEnrollDb, `companies/${companyId}/members/new-member`), {
+    uid: "new-member",
+    name: "Novo Colaborador",
+    email: "new-member@example.test",
+    role: "EMPLOYEE",
+    status: "ACTIVE",
+    teamIds: [],
+    positionTitle: "Atendente de Açougue Junior",
+    createdAt: serverTimestamp(),
+  });
+  selfEnrollBatch.set(doc(selfEnrollDb, "userProfiles/new-member"), {
+    companyId,
+    createdAt: serverTimestamp(),
+  });
+  await assertSucceeds(selfEnrollBatch.commit());
+
+  const bootstrapDb = testEnv.authenticatedContext("first-admin", { email: "first-admin@example.test" }).firestore();
+  const bootstrapBatch = writeBatch(bootstrapDb);
+  bootstrapBatch.set(doc(bootstrapDb, `companies/${companyId}-new`), {
+    name: "Nova Empresa",
+    ownerUid: "first-admin",
+    selfEnrollmentEnabled: true,
+    defaultMemberRole: "EMPLOYEE",
+    createdAt: serverTimestamp(),
+  });
+  bootstrapBatch.set(doc(bootstrapDb, `companies/${companyId}-new/members/first-admin`), {
+    uid: "first-admin",
+    name: "Primeira Administradora",
+    email: "first-admin@example.test",
+    role: "ADMIN",
+    status: "ACTIVE",
+    teamIds: [],
+    positionTitle: "Atendente de Açougue Junior",
+    createdAt: serverTimestamp(),
+  });
+  bootstrapBatch.set(doc(bootstrapDb, "userProfiles/first-admin"), {
+    companyId: `${companyId}-new`,
+    createdAt: serverTimestamp(),
+  });
+  await assertSucceeds(bootstrapBatch.commit());
 });
 
 test("a browser cannot create a submitted evaluation directly", async () => {

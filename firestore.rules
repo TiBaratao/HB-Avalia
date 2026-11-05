@@ -158,12 +158,13 @@ service cloud.firestore {
       return signedIn()
         && userId == request.auth.uid
         && request.auth.token.email is string
-        && data.keys().hasOnly(['uid', 'name', 'email', 'role', 'status', 'teamIds', 'createdAt'])
+        && data.keys().hasOnly(['uid', 'name', 'email', 'role', 'status', 'teamIds', 'positionTitle', 'createdAt'])
         && data.uid == request.auth.uid
         && data.email == request.auth.token.email
         && data.role == 'ADMIN'
         && data.status == 'ACTIVE'
         && data.teamIds == []
+        && data.positionTitle == 'Atendente de Açougue Junior'
         && existsAfter(companyPath(companyId))
         && company.ownerUid == request.auth.uid;
     }
@@ -176,7 +177,7 @@ service cloud.firestore {
         && request.auth.token.email is string
         && exists(companyPath(companyId))
         && company.selfEnrollmentEnabled == true
-        && data.keys().hasOnly(['uid', 'name', 'email', 'role', 'status', 'teamIds', 'createdAt'])
+        && data.keys().hasOnly(['uid', 'name', 'email', 'role', 'status', 'teamIds', 'positionTitle', 'createdAt'])
         && data.uid == request.auth.uid
         && data.name is string
         && data.name.size() >= 2
@@ -184,7 +185,8 @@ service cloud.firestore {
         && company.defaultMemberRole == 'EMPLOYEE'
         && data.role == 'EMPLOYEE'
         && data.status == 'ACTIVE'
-        && data.teamIds == [];
+        && data.teamIds == []
+        && data.positionTitle == 'Atendente de Açougue Junior';
     }
 
     function validEvaluationCreate(companyId, evaluationId) {
