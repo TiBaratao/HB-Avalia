@@ -10,6 +10,12 @@ const {
   submitEvaluation,
   submitSurveyResponse,
 } = require("../../src/lib/server/secure-actions-core");
+const {
+  CustomerFeedbackError,
+  getPublicCustomerFeedbackForm,
+  manageCustomerFeedback,
+  submitCustomerFeedback,
+} = require("../../src/lib/server/customer-feedback-core");
 const { publishScheduledChecklists } = require("../scheduled-checklists-core");
 
 const projectId = process.env.GCLOUD_PROJECT || "demo-hb-avalia";
@@ -136,6 +142,125 @@ test("survey responses require active membership, matching audience, and a singl
     error instanceof SecureActionError && error.code === "failed-precondition");
   await assert.rejects(submitSurveyResponse(db, "inactive-leader", input), (error) =>
     error instanceof SecureActionError && error.code === "permission-denied");
+});
+
+test("customer QR feedback is isolated from internal evaluations and requires active cashier selection", async () => {
+  const companyId = `feedback-${randomUUID()}`;
+  const company = db.collection("companies").doc(companyId);
+  const otherCompanyId = `feedback-other-${randomUUID()}`;
+  const otherCompany = db.collection("companies").doc(otherCompanyId);
+  await Promise.all([
+    company.set({ name: "Mercado de teste" }),
+    company.collection("members").doc("admin").set({ role: "ADMIN", status: "ACTIVE" }),
+    company.collection("members").doc("employee").set({ role: "EMPLOYEE", status: "ACTIVE" }),
+    otherCompany.set({ name: "Outro mercado" }),
+    otherCompany.collection("members").doc("other-admin").set({ role: "ADMIN", status: "ACTIVE" }),
+  ]);
+
+  const cashier = await manageCustomerFeedback(db, "admin", {
+    companyId,
+    action: "createCashier",
+    name: "Caixa 01",
+  });
+  const dashboard = await manageCustomerFeedback(db, "admin", { companyId, action: "list" });
+  const general = dashboard.locations.find((location) => location.kind === "GENERAL");
+  assert.ok(general?.publicToken);
+  assert.equal(dashboard.summary.averageRating, null);
+  assert.deepEqual(dashboard.recentResponses, []);
+  assert.equal(dashboard.locations.find((location) => location.id === cashier.locationId).cashierAverage, null);
+
+  const generalForm = await getPublicCustomerFeedbackForm(db, general.publicToken);
+  assert.equal(generalForm.companyName, "Mercado de teste");
+  assert.deepEqual(generalForm.cashiers, [{ id: cashier.locationId, name: "Caixa 01" }]);
+  const cashierForm = await getPublicCustomerFeedbackForm(db, cashier.token);
+  assert.equal(cashierForm.location.kind, "CASHIER");
+  assert.equal(cashierForm.location.name, "Caixa 01");
+  const otherCashier = await manageCustomerFeedback(db, "other-admin", {
+    companyId: otherCompanyId,
+    action: "createCashier",
+    name: "Caixa 01",
+  });
+
+  await submitCustomerFeedback(db, {
+    token: general.publicToken,
+    overallRating: 5,
+    cashierId: cashier.locationId,
+    cashierRating: 4,
+    comment: "Atendimento muito bom.",
+  }, "test-client");
+  for (let index = 0; index < 4; index += 1) {
+    await submitCustomerFeedback(db, {
+      token: general.publicToken,
+      overallRating: 4,
+      cashierId: cashier.locationId,
+      cashierRating: 4,
+    }, `test-client-${index}`);
+  }
+  await assert.rejects(submitCustomerFeedback(db, {
+    token: general.publicToken,
+    overallRating: 4,
+    cashierId: otherCashier.locationId,
+    cashierRating: 2,
+  }, "cross-company-client"), (error) => error instanceof CustomerFeedbackError && error.code === "failed-precondition");
+  await assert.rejects(submitCustomerFeedback(db, {
+    token: cashier.token,
+    overallRating: 5,
+    cashierId: "another-cashier",
+    cashierRating: 1,
+  }, "another-client"), (error) => error instanceof CustomerFeedbackError && error.code === "invalid-argument");
+
+  assert.equal((await company.collection("customerFeedbackResponses").get()).size, 5);
+  assert.equal((await company.collection("evaluations").get()).size, 0);
+  const cashierSnapshot = await company.collection("customerFeedbackLocations").doc(cashier.locationId).get();
+  assert.equal(cashierSnapshot.get("cashierRatingCount"), 5);
+  assert.equal(cashierSnapshot.get("cashierRatingTotal"), 20);
+  const adminDashboard = await manageCustomerFeedback(db, "admin", { companyId, action: "list" });
+  assert.equal(adminDashboard.summary.responseCount, 5);
+  assert.equal(adminDashboard.summary.averageRating, 4.2);
+  assert.ok(adminDashboard.recentResponses.some((response) => response.comment === "Atendimento muito bom."));
+
+  const secondCashier = await manageCustomerFeedback(db, "admin", {
+    companyId,
+    action: "createCashier",
+    name: "Caixa 02",
+  });
+  await submitCustomerFeedback(db, {
+    token: general.publicToken,
+    overallRating: 1,
+    cashierId: secondCashier.locationId,
+    cashierRating: 1,
+    comment: "Comentário de um grupo pequeno.",
+  }, "small-cashier-cohort");
+  const dashboardWithSmallCashierCohort = await manageCustomerFeedback(db, "admin", { companyId, action: "list" });
+  assert.equal(dashboardWithSmallCashierCohort.summary.responseCount, 6);
+  assert.equal(dashboardWithSmallCashierCohort.locations.find((location) => location.id === secondCashier.locationId).cashierAverage, null);
+  assert.equal(dashboardWithSmallCashierCohort.recentResponses.some((response) => response.comment === "Comentário de um grupo pequeno."), false);
+
+  await assert.rejects(manageCustomerFeedback(db, "employee", { companyId, action: "list" }),
+    (error) => error instanceof CustomerFeedbackError && error.code === "permission-denied");
+  await assert.rejects(manageCustomerFeedback(db, "other-admin", { companyId, action: "list" }),
+    (error) => error instanceof CustomerFeedbackError && error.code === "permission-denied");
+  await manageCustomerFeedback(db, "admin", { companyId, action: "setCashierActive", locationId: cashier.locationId, active: false });
+  await assert.rejects(getPublicCustomerFeedbackForm(db, cashier.token),
+    (error) => error instanceof CustomerFeedbackError && error.code === "not-found");
+});
+
+test("customer feedback applies an atomic per-client submission limit", async () => {
+  const companyId = `feedback-limit-${randomUUID()}`;
+  const company = db.collection("companies").doc(companyId);
+  await company.set({ name: "Mercado com limite" });
+  await company.collection("members").doc("admin").set({ role: "ADMIN", status: "ACTIVE" });
+  const dashboard = await manageCustomerFeedback(db, "admin", { companyId, action: "list" });
+  const general = dashboard.locations.find((location) => location.kind === "GENERAL");
+  assert.ok(general?.publicToken);
+
+  const attempts = await Promise.allSettled(Array.from({ length: 11 }, () =>
+    submitCustomerFeedback(db, { token: general.publicToken, overallRating: 5 }, "limited-client")));
+  assert.equal(attempts.filter((attempt) => attempt.status === "fulfilled").length, 10);
+  assert.equal(attempts.filter((attempt) => attempt.status === "rejected"
+    && attempt.reason instanceof CustomerFeedbackError
+    && attempt.reason.code === "resource-exhausted").length, 1);
+  assert.equal((await company.collection("customerFeedbackResponses").get()).size, 10);
 });
 
 test("scheduled checklist publication creates eligible assignments once", async () => {

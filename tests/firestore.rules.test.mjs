@@ -123,6 +123,32 @@ test("only the callable server path can record survey participation and response
   }));
 });
 
+test("customer feedback data and public QR mappings are inaccessible through Firestore clients", async () => {
+  const adminDb = testEnv.authenticatedContext("admin", { email: "admin@example.test" }).firestore();
+  const anonymousDb = testEnv.unauthenticatedContext().firestore();
+  const responsePath = `companies/${companyId}/customerFeedbackResponses/response-1`;
+  const locationPath = `companies/${companyId}/customerFeedbackLocations/general`;
+  const rateLimitPath = `companies/${companyId}/customerFeedbackRateLimits/hash`;
+  const qrTokenPath = "customerFeedbackQrTokens/public-token";
+
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, responsePath), { overallRating: 5, comment: "Avaliação" });
+    await setDoc(doc(db, locationPath), { kind: "GENERAL", name: "Supermercado" });
+    await setDoc(doc(db, rateLimitPath), { submissionCount: 1 });
+    await setDoc(doc(db, qrTokenPath), { companyId, locationId: "general", active: true });
+  });
+
+  for (const db of [adminDb, anonymousDb]) {
+    await assertFails(getDoc(doc(db, responsePath)));
+    await assertFails(getDoc(doc(db, locationPath)));
+    await assertFails(getDoc(doc(db, rateLimitPath)));
+    await assertFails(getDoc(doc(db, qrTokenPath)));
+    await assertFails(setDoc(doc(db, responsePath), { overallRating: 1 }));
+    await assertFails(setDoc(doc(db, qrTokenPath), { companyId, locationId: "general" }));
+  }
+});
+
 test("a browser cannot forge promotion evidence or change promotion status", async () => {
   const db = testEnv.authenticatedContext("leader", { email: "leader@example.test" }).firestore();
   await assertFails(setDoc(doc(db, `companies/${companyId}/promotionRequests/forged`), {

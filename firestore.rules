@@ -560,6 +560,30 @@ service cloud.firestore {
           allow delete: if isAdmin(companyId) && parentEvaluation().status == 'DRAFT';
         }
       }
+
+      match /customerFeedbackLocations/{locationId} {
+        allow read, write: if false;
+      }
+
+      match /customerFeedbackResponses/{responseId} {
+        allow read, write: if false;
+      }
+
+      match /customerFeedbackSummaries/{summaryId} {
+        allow read, write: if false;
+      }
+
+      match /customerFeedbackPrivate/{documentId} {
+        allow read, write: if false;
+      }
+
+      match /customerFeedbackRateLimits/{clientHash} {
+        allow read, write: if false;
+      }
+    }
+
+    match /customerFeedbackQrTokens/{tokenId} {
+      allow read, write: if false;
     }
   }
 }

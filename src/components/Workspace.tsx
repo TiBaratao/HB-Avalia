@@ -36,11 +36,13 @@ import {
   List,
   SlidersHorizontal,
   SignOut,
+  Star,
   Trophy,
   UsersThree,
   X,
 } from "@phosphor-icons/react";
 import ExpandingTabs from "./ui/expanding-tabs";
+import { CustomerFeedbackAdminPage } from "./CustomerFeedbackAdminPage";
 import { ConfirmButton, Modal } from "./ui/modal";
 import type {
   ChecklistAssignmentDocument,
@@ -96,7 +98,7 @@ import {
   type WorkspaceData,
 } from "../lib/firebase/data";
 
-type Section = "overview" | "team" | "evaluations" | "ranking" | "cycles" | "surveys" | "checklists" | "settings" | "development" | "promotions";
+type Section = "overview" | "team" | "evaluations" | "ranking" | "cycles" | "surveys" | "checklists" | "settings" | "development" | "promotions" | "customerFeedback";
 type Notice = { kind: "error" | "success"; text: string } | null;
 
 const roleNames: Record<FirebaseRole, string> = {
@@ -221,7 +223,7 @@ export function Workspace({ user, companyId, onSignOut }: { user: User; companyI
       { id: "overview", label: "Visão geral" }, { id: "team", label: "Pessoas e equipes" },
       { id: "evaluations", label: "Avaliações" }, { id: "ranking", label: "Ranking" },
       { id: "cycles", label: "Configuração" },
-      { id: "surveys", label: "Pesquisas" }, { id: "checklists", label: "Checklists" }, { id: "promotions", label: "Promoções" }, { id: "settings", label: "Empresa" },
+      { id: "surveys", label: "Pesquisas" }, { id: "checklists", label: "Checklists" }, { id: "customerFeedback", label: "Avaliação de Clientes" }, { id: "promotions", label: "Promoções" }, { id: "settings", label: "Empresa" },
     ]
     : [
       { id: "overview", label: "Início" }, { id: "team", label: "Minha equipe" },
@@ -253,7 +255,9 @@ export function Workspace({ user, companyId, onSignOut }: { user: User; companyI
                   : <PromotionRequestsPage data={data} execute={execute}/>
               : section === "promotions"
                 ? role === "ADMIN" ? <PromotionRequestsPage data={data} execute={execute}/> : <Overview data={data} user={user} execute={execute} onNavigate={setSection} />
-                : <CompanyPage data={data} execute={execute} />;
+                : section === "customerFeedback"
+                  ? role === "ADMIN" ? <CustomerFeedbackAdminPage companyId={companyId}/> : <Overview data={data} user={user} execute={execute} onNavigate={setSection}/>
+                  : <CompanyPage data={data} execute={execute} />;
 
   return (
     <div className="live-app">
@@ -312,6 +316,7 @@ const sectionIcons: Record<Section, ReactNode> = {
   surveys: <ChatCircleText size={18} weight="regular"/>,
   checklists: <ClipboardText size={18} weight="regular"/>,
   settings: <Buildings size={18} weight="regular"/>,
+  customerFeedback: <Star size={18} weight="regular"/>,
 };
 
 function Overview({ data, user, execute, onNavigate }: { data: WorkspaceData; user: User; execute: (operation: () => Promise<unknown>, message: string) => Promise<boolean>; onNavigate: (section: Section) => void }) {

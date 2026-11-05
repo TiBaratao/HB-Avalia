@@ -2,20 +2,17 @@ import "server-only";
 
 import { NextResponse } from "next/server";
 import type { Firestore } from "firebase-admin/firestore";
-import {
-  SecureActionError,
-  type SecureActionResult,
-} from "./secure-actions-core";
+import { SecureActionError } from "./secure-actions-core";
 import { getAdminAuth, getAdminFirestore } from "./firebase-admin";
 
 type JsonObject = Record<string, unknown>;
-type SecureAction = (db: Firestore, uid: string, payload: JsonObject) => Promise<SecureActionResult>;
+type SecureAction = (db: Firestore, uid: string, payload: JsonObject) => Promise<object>;
 
-export async function handleSecureActionRequest(request: Request, action: SecureAction) {
+export async function handleSecureActionRequest(request: Request, action: SecureAction, successStatus = 201) {
   try {
     const uid = await authenticateRequest(request);
     const payload = await readPayload(request);
-    return NextResponse.json(await action(getAdminFirestore(), uid, payload), { status: 201 });
+    return NextResponse.json(await action(getAdminFirestore(), uid, payload), { status: successStatus });
   } catch (error) {
     if (error instanceof SecureActionError) {
       return NextResponse.json({ error: error.message }, { status: statusForCode(error.code) });
@@ -65,6 +62,10 @@ function statusForCode(code: string): number {
       return 412;
     case "invalid-argument":
       return 400;
+    case "not-found":
+      return 404;
+    case "resource-exhausted":
+      return 429;
     default:
       return 500;
   }
