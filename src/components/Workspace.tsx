@@ -647,6 +647,7 @@ function DevelopmentProfilePage({ data, employee, execute, onBack }: { data: Wor
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
   const [historyAttempt, setHistoryAttempt] = useState(0);
+  const [showPromotionForm, setShowPromotionForm] = useState(false);
   const [justification, setJustification] = useState("");
   const [promotionIndicators, setPromotionIndicators] = useState(() => restorePromotionEvaluationInputs().indicators);
   const [promotionCompetencies, setPromotionCompetencies] = useState(() => restorePromotionEvaluationInputs().competencies);
@@ -700,6 +701,7 @@ function DevelopmentProfilePage({ data, employee, execute, onBack }: { data: Wor
       submittedAt: evaluation.submittedAt,
     }));
   const promotionPreview = promotionResultPreview(promotionIndicators, promotionCompetencies);
+  const canStartPromotion = !pendingRequest && canManagePdi && Boolean(careerProgress.nextPosition);
 
   async function submitRequest() {
     if (!promotionPreview?.complete || !careerProgress.nextPosition || justification.trim().length < 20) return;
@@ -712,6 +714,39 @@ function DevelopmentProfilePage({ data, employee, execute, onBack }: { data: Wor
       competencies: promotionCompetencies.map(({ id, score }) => ({ id, score: Number(score) })),
     }), "Indicação enviada para análise administrativa.");
     setRequesting(false);
+  }
+
+  if (showPromotionForm && canStartPromotion) {
+    return <>
+      <div className="development-back-row"><button type="button" className="text-link" onClick={() => setShowPromotionForm(false)}><ArrowLeft size={16}/> Voltar ao perfil</button></div>
+      <PageHeading
+        eyebrow="AVALIAÇÃO DE PROMOÇÃO/PDI"
+        title={`PDI de ${profileEmployee.name}`}
+        subtitle="Preencha a avaliação para recomendar a progressão ao próximo cargo."
+      />
+      <section className="live-panel development-panel">
+        <div className="promotion-career-step">
+          <span className="eyebrow">PROGRESSÃO DE CARGO</span>
+          <b>{careerProgress.currentPosition} <ArrowUpRight size={15}/> {careerProgress.nextPosition}</b>
+          <small>O cargo só muda após a aprovação da administração.</small>
+        </div>
+        <PromotionRequestForm
+          justification={justification}
+          onJustificationChange={setJustification}
+          indicators={promotionIndicators}
+          onIndicatorsChange={setPromotionIndicators}
+          competencies={promotionCompetencies}
+          onCompetenciesChange={setPromotionCompetencies}
+          preview={promotionPreview}
+          evaluationCount={evaluationSnapshots.length}
+          averageEvaluationScore={evaluationSnapshots.length
+            ? evaluationSnapshots.reduce((sum, item) => sum + item.score, 0) / evaluationSnapshots.length
+            : null}
+          requesting={requesting}
+          onSubmit={() => void submitRequest()}
+        />
+      </section>
+    </>;
   }
 
   return <>
@@ -746,27 +781,19 @@ function DevelopmentProfilePage({ data, employee, execute, onBack }: { data: Wor
           </article>) : !historyLoading && !historyError && <p className="development-inline-note">Ainda não há indicações de promoção para este colaborador.</p>}
         </div>
       </details>
-      <div className="live-panel-heading"><div><span className="eyebrow">AVALIAÇÃO DE PROMOÇÃO/PDI</span><h2>Indicadores e competências</h2></div></div>
-      {plan?.status === "PROMOTED" && !pendingRequest && canManagePdi && <div className="form-alert"><b>Nova indicação para promoção</b><p>Este colaborador já foi promovido. O próximo cargo será definido automaticamente pela sequência de carreira.</p></div>}
-      {!pendingRequest && canManagePdi && !careerProgress.nextPosition && <div className="form-alert error" role="alert">{careerProgress.isFinalPosition
-        ? "Este colaborador já está no último cargo da sequência de carreira."
-        : "O cargo atual não está na sequência de carreira. Peça à administração para atualizar o cargo antes de iniciar o PDI."}</div>}
-      {!pendingRequest && canManagePdi && careerProgress.nextPosition && <p className="development-inline-note">Progressão automática: <b>{careerProgress.currentPosition}</b> → <b>{careerProgress.nextPosition}</b>. O cargo só muda após a aprovação da administração.</p>}
-      {!pendingRequest && canManagePdi && careerProgress.nextPosition && <PromotionRequestForm
-          justification={justification}
-          onJustificationChange={setJustification}
-          indicators={promotionIndicators}
-          onIndicatorsChange={setPromotionIndicators}
-          competencies={promotionCompetencies}
-          onCompetenciesChange={setPromotionCompetencies}
-          preview={promotionPreview}
-          evaluationCount={evaluationSnapshots.length}
-          averageEvaluationScore={evaluationSnapshots.length
-            ? evaluationSnapshots.reduce((sum, item) => sum + item.score, 0) / evaluationSnapshots.length
-            : null}
-          requesting={requesting}
-          onSubmit={() => void submitRequest()}
-        />}
+      {canManagePdi && <section className="promotion-next-step">
+        <div><span className="eyebrow">{pendingRequest ? "INDICAÇÃO EM ANDAMENTO" : "PRÓXIMA ETAPA"}</span>
+          <h2>{pendingRequest ? "PDI enviado para análise" : careerProgress.nextPosition ? "Avaliar próximo cargo" : careerProgress.isFinalPosition ? "Último cargo da sequência" : "Cargo fora da sequência"}</h2>
+          <p>{pendingRequest
+            ? "Aguarde a decisão da administração. O histórico acima contém os detalhes da indicação."
+            : careerProgress.nextPosition
+              ? `${careerProgress.currentPosition} → ${careerProgress.nextPosition}. O preenchimento será feito em uma tela própria.`
+              : careerProgress.isFinalPosition
+                ? "Este colaborador já alcançou o último cargo configurado."
+                : "Peça à administração para atualizar o cargo atual antes de iniciar o PDI."}</p>
+        </div>
+        {canStartPromotion && <button type="button" className="button button-primary" onClick={() => setShowPromotionForm(true)}>Abrir avaliação do PDI <ArrowUpRight size={16}/></button>}
+      </section>}
       {!pendingRequest && !isAdmin && !canManagePdi && isOwner && <p className="development-inline-note">A avaliação não está disponível enquanto os dados de Promoção/PDI não puderem ser carregados.</p>}
     </section>
   </>;

@@ -2111,6 +2111,12 @@ body {
 .promotion-history-entry header p, .promotion-history-note p { margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .promotion-history-note { color: var(--ink); font-size: 12px; }
 .promotion-history-note p { white-space: pre-wrap; }
+.promotion-next-step, .promotion-career-step { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 16px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface-soft); }
+.promotion-next-step h2 { margin: 4px 0; color: var(--ink); font-size: 16px; }
+.promotion-next-step p, .promotion-career-step small { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.promotion-career-step { align-items: flex-start; flex-direction: column; gap: 5px; background: var(--brand-blue-light); }
+.promotion-career-step b { display: flex; align-items: center; gap: 8px; color: var(--brand-blue-dark); font-size: 16px; }
+.promotion-career-step .eyebrow { color: var(--brand-blue-dark); }
 .development-completed-count { display: inline-grid; min-width: 24px; height: 24px; place-items: center; padding: 0 7px; border-radius: 999px; background: var(--brand-blue-light); color: var(--brand-blue-dark); font-size: 11px; }
 .development-completed-list { display: grid; gap: 8px; padding: 0 10px 10px; }
 .development-completed-list .development-goal-card { padding: 12px; }
