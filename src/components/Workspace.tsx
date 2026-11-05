@@ -234,7 +234,9 @@ export function Workspace({ user, companyId, onSignOut }: { user: User; companyI
   const content = section === "overview"
     ? <Overview data={data} user={user} execute={execute} onNavigate={setSection} />
     : section === "team"
-      ? (role === "LEADER" && selectedMemberId ? <DevelopmentProfilePage key={selectedMemberId} data={data} employee={data.members.find((person) => person.uid === selectedMemberId)} execute={execute} onBack={() => setSelectedMemberId("")} /> : <TeamPage data={data} user={user} execute={execute} onOpenProfile={(employeeId) => setSelectedMemberId(employeeId)} />)
+      ? (selectedMemberId && (role === "ADMIN" || role === "LEADER")
+        ? <DevelopmentProfilePage key={selectedMemberId} data={data} employee={data.members.find((person) => person.uid === selectedMemberId)} execute={execute} onBack={() => setSelectedMemberId("")} />
+        : <TeamPage data={data} user={user} execute={execute} onOpenProfile={(employeeId) => setSelectedMemberId(employeeId)} />)
       : section === "evaluations"
         ? <EvaluationsPage data={data} user={user} refresh={refresh} execute={execute} />
         : section === "ranking"
@@ -648,9 +650,10 @@ function DevelopmentProfilePage({ data, employee, execute, onBack }: { data: Wor
   if (!employee) return <><button type="button" className="text-link" onClick={onBack}><ArrowLeft size={16}/> Voltar para equipe</button><EmptyState title="Colaborador não encontrado" text="Volte à equipe e selecione uma pessoa ativa."/></>;
   const profileEmployee = employee;
 
+  const isAdmin = data.member.role === "ADMIN";
   const sharedTeamIds = profileEmployee.teamIds.filter((teamId) => data.member.teamIds.includes(teamId));
-  const isOwner = sharedTeamIds.length > 0;
-  const canManagePdi = isOwner && data.developmentAccessAvailable;
+  const isOwner = isAdmin || sharedTeamIds.length > 0;
+  const canManagePdi = !isAdmin && isOwner && data.developmentAccessAvailable;
   const ownRequests = data.promotionRequests.filter((request) => request.employeeId === profileEmployee.uid).sort((a, b) => timestampMillis(b.submittedAt) - timestampMillis(a.submittedAt));
   const pendingRequest = ownRequests.find((request) => request.status === "PENDING");
   const evaluationSnapshots = data.evaluations
@@ -685,7 +688,7 @@ function DevelopmentProfilePage({ data, employee, execute, onBack }: { data: Wor
     <PageHeading eyebrow="PERFIL DO COLABORADOR" title={employee.name} subtitle={`${employee.email} · Cargo atual: ${employee.positionTitle || "Não informado"}`} />
     {data.developmentAccessAvailable === false && <div className="live-notice error" role="alert">O Firestore recusou a leitura dos dados de PDI para este perfil. Recarregue a página; se persistir, confira as permissões da conta nas regras do projeto.</div>}
     {data.restrictedPromotionHistory && <div className="live-notice" role="status">Registros antigos que incluem evidências de avaliações convencionais estão restritos à administração. As avaliações originais permanecem preservadas.</div>}
-    {!sharedTeamIds.length && <div className="form-alert error">Este colaborador não está mais em uma equipe compartilhada com você. O PDI fica disponível somente para liderança da equipe.</div>}
+    {!isAdmin && !sharedTeamIds.length && <div className="form-alert error">Este colaborador não está mais em uma equipe compartilhada com você. O PDI fica disponível somente para liderança da equipe.</div>}
     {plan?.status === "PROMOTED" && <div className="development-approved-banner"><CheckCircle size={20}/><span><b>Promoção aprovada</b><small>O cargo do colaborador foi atualizado para {employee.positionTitle || plan.targetPosition}.</small></span></div>}
     {plan && !isOwner && <div className="form-alert">Este PDI é gerenciado por outra liderança. Você pode acompanhar a avaliação, mas não enviar uma nova indicação.</div>}
     <section className="live-panel development-panel">
@@ -711,7 +714,7 @@ function DevelopmentProfilePage({ data, employee, execute, onBack }: { data: Wor
           requesting={requesting}
           onSubmit={() => void submitRequest()}
         />}
-      {!pendingRequest && !canManagePdi && isOwner && <p className="development-inline-note">A avaliação não está disponível enquanto os dados de Promoção/PDI não puderem ser carregados.</p>}
+      {!pendingRequest && !isAdmin && !canManagePdi && isOwner && <p className="development-inline-note">A avaliação não está disponível enquanto os dados de Promoção/PDI não puderem ser carregados.</p>}
     </section>
   </>;
 }
