@@ -116,7 +116,7 @@ export function CustomerFeedbackAdminPage({ companyId }: { companyId: string }) 
       </section>
 
       <section className="live-panel customer-feedback-panel">
-        <div className="live-panel-heading"><div><h2>Comentários recentes</h2><p>Os comentários aparecem quando o grupo correspondente tem pelo menos {dashboard.privacyThreshold} respostas. Exibindo até {dashboard.maxRecentResponses} comentários.</p></div></div>
+        <div className="live-panel-heading"><div><h2>Comentários recentes</h2><p>Os comentários aparecem assim que são enviados. As médias são liberadas após {dashboard.privacyThreshold} respostas. Exibindo até {dashboard.maxRecentResponses} avaliações recentes.</p></div></div>
         {dashboard.recentResponses.length ? <div className="customer-feedback-comments">
           {dashboard.recentResponses.map((response) => <article className="customer-feedback-comment" key={response.id}>
             <div className="customer-feedback-comment-heading">
@@ -129,9 +129,7 @@ export function CustomerFeedbackAdminPage({ companyId }: { companyId: string }) 
             </div>
             <p>{response.comment || "Nenhum comentário enviado."}</p>
           </article>)}
-        </div> : <p className="empty-inline">{dashboard.summary.responseCount < dashboard.privacyThreshold
-          ? `Os resultados e comentários aparecem após ${dashboard.privacyThreshold} respostas para preservar o anonimato.`
-          : "Nenhum comentário disponível para os grupos que já atingiram o mínimo de respostas."}</p>}
+        </div> : <p className="empty-inline">Ainda não há avaliações de clientes.</p>}
       </section>
     </> : <section className="live-panel"><p>Os dados das avaliações de clientes não estão disponíveis.</p><button className="button button-outline" onClick={() => void refresh()}>Tentar novamente</button></section>}
   </>;

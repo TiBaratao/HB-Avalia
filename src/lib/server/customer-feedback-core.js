@@ -265,21 +265,11 @@ async function manageCustomerFeedback(db, uid, data) {
           : null,
       };
     });
-    const locationById = new Map(locationList.map((location) => [location.id, location]));
     const summary = summarySnapshot.exists ? summarySnapshot.data() : { responseCount: 0, overallRatingTotal: 0 };
     const responseCount = Number(summary.responseCount ?? 0);
-    const responseSnapshot = responseCount >= MIN_RESPONSES_FOR_RESULTS
-      ? await companyRef.collection("customerFeedbackResponses")
-        .orderBy("submittedAt", "desc").limit(MAX_RECENT_RESPONSES * 5).get()
-      : null;
-    const recentResponses = (responseSnapshot?.docs ?? [])
-      .filter((snapshot) => {
-        const source = locationById.get(snapshot.get("sourceLocationId"));
-        const cashierId = snapshot.get("cashierId");
-        const cashier = typeof cashierId === "string" ? locationById.get(cashierId) : null;
-        return (source?.responseCount ?? 0) >= MIN_RESPONSES_FOR_RESULTS
-          && (!cashierId || (cashier?.cashierRatingCount ?? 0) >= MIN_RESPONSES_FOR_RESULTS);
-      })
+    const responseSnapshot = await companyRef.collection("customerFeedbackResponses")
+      .orderBy("submittedAt", "desc").limit(MAX_RECENT_RESPONSES).get();
+    const recentResponses = responseSnapshot.docs
       .slice(0, MAX_RECENT_RESPONSES)
       .map((snapshot) => ({
         id: snapshot.id,

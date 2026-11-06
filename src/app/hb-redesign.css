@@ -1,10 +1,11 @@
 /* ==========================================================================
    HB Avalia · camada visual (redesign)
    --------------------------------------------------------------------------
-   Este arquivo concentra a apresentação do redesign: tema, tipografia,
-   componentes visuais e ajustes responsivos. Não altera regras de negócio.
+   Este arquivo reúne tokens e ajustes visuais/componentes do redesign.
+   Alguns componentes também definem layout e estados de foco; regras de
+   negócio permanecem nos componentes e serviços.
    Deve ser importado POR ÚLTIMO em layout.tsx, depois de filters.css.
-   Remover o import desfaz apenas os estilos definidos neste arquivo.
+   Para desfazer o redesign: remova o import.
    ========================================================================== */
 
 @import url("https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..700&family=Figtree:wght@400..700&display=swap");
@@ -880,6 +881,114 @@ body,
   margin: auto;
 }
 
+/* Formulário de PDI: nomes longos de indicador (uma palavra só) quebram em vez de invadir a coluna vizinha */
+.promotion-indicator-name b {
+  overflow-wrap: break-word;
+}
+
+/* Últimos restos da paleta verde antiga (pesquisas, passos do assistente de checklist, estado vazio) */
+.survey-audience label {
+  color: var(--text-secondary);
+}
+
+.survey-card-metrics > span {
+  border-color: var(--line);
+}
+
+.survey-card-metrics > span b {
+  color: var(--brand-blue-dark);
+}
+
+.admin-checklist-stepper li button > span {
+  border-color: var(--line);
+}
+
+:root:not([data-theme="dark"]) .live-empty > span {
+  background: var(--brand-blue-light);
+  color: var(--brand-blue-dark);
+}
+
+/* ==========================================================================
+   Configuração: abas simples (nome e contagem sempre visíveis)
+   ========================================================================== */
+.config-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-bottom: 1px solid var(--line);
+}
+
+.config-tab {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  margin-bottom: -1px;
+  padding: 12px 16px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.config-tab-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  color: var(--text-muted);
+}
+
+.config-tab-text {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.config-tab-text b {
+  color: inherit;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.config-tab-text small {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.config-tab:hover { background: var(--surface-soft); }
+
+.config-tab.active {
+  border-bottom-color: var(--brand-blue);
+  color: var(--text-primary);
+}
+
+.config-tab.active .config-tab-icon { color: var(--brand-blue); }
+
+.config-tab:focus-visible {
+  outline: 3px solid var(--brand-blue);
+  outline-offset: -3px;
+}
+
+@media (max-width: 760px) {
+  .config-tabs { grid-template-columns: minmax(0, 1fr); }
+  .config-tab { margin-bottom: 0; border-bottom: 0; border-left: 3px solid transparent; }
+  .config-tab.active { border-left-color: var(--brand-blue); }
+}
+
+.config-tabs { width: 100%; }
+
+.configuration-navigation {
+  min-height: 0;
+  padding: 0 8px;
+}
+
+:root:not([data-theme="dark"]) .configuration-navigation {
+  background: var(--surface);
+}
+
 /* ==========================================================================
    12. Legibilidade: nenhum texto abaixo de 11px (antes havia 8, 9, 10 e 11px)
    Gerado a partir dos seletores existentes; só aumenta o tamanho da fonte.
@@ -1250,170 +1359,5 @@ select:not([multiple]) {
   .live-panel,
   .live-stat {
     border-radius: 8px;
-  }
-}
-
-.mobile-menu-trigger,
-.mobile-menu-close,
-.mobile-menu-backdrop {
-  display: none;
-}
-
-@media (max-width: 760px) {
-  .live-app .live-sidebar {
-    position: fixed;
-    inset: 0 auto 0 0;
-    z-index: 20;
-    display: none;
-    width: min(86vw, 320px);
-    height: 100vh;
-    height: 100dvh;
-    max-height: 100vh;
-    flex-direction: column;
-    gap: 12px;
-    overflow-y: auto;
-    padding: calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));
-    border: 0;
-    border-right: 1px solid var(--line);
-    background: var(--surface);
-    box-shadow: 12px 0 36px rgb(15 23 28 / 18%);
-    backdrop-filter: none;
-  }
-
-  .live-app .live-sidebar.is-open {
-    display: flex;
-  }
-
-  .mobile-menu-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 19;
-    display: block;
-    width: 100%;
-    height: 100%;
-    border: 0;
-    background: rgb(10 18 23 / 48%);
-  }
-
-  .mobile-menu-close {
-    display: inline-flex;
-    min-height: 40px;
-    align-items: center;
-    align-self: flex-end;
-    gap: 7px;
-    border: 0;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--text-secondary);
-    font: 600 14px var(--sans);
-    cursor: pointer;
-  }
-
-  .mobile-menu-close:focus-visible,
-  .mobile-menu-trigger:focus-visible {
-    outline: 2px solid var(--brand-blue);
-    outline-offset: 3px;
-  }
-
-  .live-app .live-sidebar .live-nav {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-    overflow: visible;
-    padding: 0;
-  }
-
-  .live-app .live-sidebar .live-nav button {
-    width: 100%;
-    min-height: 44px;
-    flex-shrink: 0;
-    padding: 7px 10px;
-    border: 1px solid transparent;
-    border-radius: 6px;
-    background: transparent;
-    box-shadow: none;
-    font-size: 14px;
-    white-space: nowrap;
-  }
-
-  .live-app .live-sidebar .live-nav button.active {
-    border-color: var(--brand-blue-light);
-    background: var(--brand-blue-light);
-    color: var(--brand-blue-dark);
-  }
-
-  .live-topbar {
-    min-height: 58px;
-    gap: 8px;
-    padding-right: 12px;
-    padding-left: 12px;
-  }
-
-  .mobile-menu-trigger {
-    display: flex;
-    min-width: 0;
-    min-height: 42px;
-    flex: 1;
-    align-items: center;
-    gap: 8px;
-    overflow: hidden;
-    border: 0;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--text-primary);
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .mobile-menu-trigger > svg:first-child {
-    flex: 0 0 auto;
-    color: var(--brand-blue-dark);
-  }
-
-  .mobile-menu-trigger .company-logo-sidebar {
-    width: 48px;
-    height: 26px;
-    flex: 0 0 48px;
-  }
-
-  .mobile-menu-heading {
-    display: flex;
-    min-width: 0;
-    flex: 1;
-    flex-direction: column;
-    gap: 2px;
-    overflow: hidden;
-  }
-
-  .mobile-menu-heading b,
-  .mobile-menu-heading small {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .mobile-menu-heading b {
-    font-size: 13px;
-  }
-
-  .mobile-menu-heading small {
-    color: var(--text-muted);
-    font-size: 11px;
-  }
-
-  .mobile-menu-trigger-label {
-    flex: 0 0 auto;
-    color: var(--brand-blue-dark);
-    font-size: 13px;
-    font-weight: 650;
-  }
-
-  .live-connection-status,
-  .live-topbar-actions .topbar-signout {
-    display: none !important;
-  }
-
-  .live-topbar-actions {
-    flex: 0 0 auto;
   }
 }

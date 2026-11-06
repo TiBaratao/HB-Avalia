@@ -188,6 +188,10 @@ test("customer QR feedback is isolated from internal evaluations and requires ac
     cashierRating: 4,
     comment: "Atendimento muito bom.",
   }, "test-client");
+  const dashboardBeforeThreshold = await manageCustomerFeedback(db, "admin", { companyId, action: "list" });
+  assert.equal(dashboardBeforeThreshold.summary.responseCount, 1);
+  assert.equal(dashboardBeforeThreshold.summary.averageRating, null);
+  assert.ok(dashboardBeforeThreshold.recentResponses.some((response) => response.comment === "Atendimento muito bom."));
   for (let index = 0; index < 4; index += 1) {
     await submitCustomerFeedback(db, {
       token: general.publicToken,
@@ -234,7 +238,7 @@ test("customer QR feedback is isolated from internal evaluations and requires ac
   const dashboardWithSmallCashierCohort = await manageCustomerFeedback(db, "admin", { companyId, action: "list" });
   assert.equal(dashboardWithSmallCashierCohort.summary.responseCount, 6);
   assert.equal(dashboardWithSmallCashierCohort.locations.find((location) => location.id === secondCashier.locationId).cashierAverage, null);
-  assert.equal(dashboardWithSmallCashierCohort.recentResponses.some((response) => response.comment === "Comentário de um grupo pequeno."), false);
+  assert.ok(dashboardWithSmallCashierCohort.recentResponses.some((response) => response.comment === "Comentário de um grupo pequeno."));
 
   await assert.rejects(manageCustomerFeedback(db, "employee", { companyId, action: "list" }),
     (error) => error instanceof CustomerFeedbackError && error.code === "permission-denied");

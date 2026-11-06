@@ -34,15 +34,13 @@ import {
   ChatCircleText,
   GearSix,
   House,
-  List,
   SlidersHorizontal,
   SignOut,
   Star,
   Trophy,
   UsersThree,
-  X,
 } from "@phosphor-icons/react";
-import ExpandingTabs from "./ui/expanding-tabs";
+import ConfigTabs from "./ui/config-tabs";
 import { CustomerFeedbackAdminPage } from "./CustomerFeedbackAdminPage";
 import { ConfirmButton, Modal } from "./ui/modal";
 import type {
@@ -136,10 +134,6 @@ export function Workspace({ user, companyId, onSignOut }: { user: User; companyI
   const [notice, setNotice] = useState<Notice>(null);
   const [section, setSection] = useState<Section>("overview");
   const [selectedMemberId, setSelectedMemberId] = useState("");
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const mobileMenuRef = useRef<HTMLElement>(null);
-  const mobileMenuTriggerRef = useRef<HTMLButtonElement>(null);
-  const mobileMenuCloseRef = useRef<HTMLButtonElement>(null);
 
   const refresh = useCallback(async (quiet = false) => {
     if (quiet) setRefreshing(true);
@@ -163,42 +157,6 @@ export function Workspace({ user, companyId, onSignOut }: { user: User; companyI
     const timeout = window.setTimeout(() => void refresh(true), nextRefresh.getTime() - Date.now());
     return () => window.clearTimeout(timeout);
   }, [refresh, data]);
-  useEffect(() => {
-    if (!mobileMenuOpen) return;
-    const previousOverflow = document.body.style.overflow;
-    const menuTrigger = mobileMenuTriggerRef.current;
-    document.body.style.overflow = "hidden";
-    mobileMenuCloseRef.current?.focus();
-
-    const focusableSelector = 'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setMobileMenuOpen(false);
-        return;
-      }
-      if (event.key !== "Tab") return;
-
-      const focusable = Array.from(mobileMenuRef.current?.querySelectorAll<HTMLElement>(focusableSelector) ?? []);
-      if (!focusable.length) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      const focusIsOutsideMenu = !mobileMenuRef.current?.contains(document.activeElement);
-      if (event.shiftKey && (document.activeElement === first || focusIsOutsideMenu)) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && (document.activeElement === last || focusIsOutsideMenu)) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      document.removeEventListener("keydown", handleKeyDown);
-      menuTrigger?.focus();
-    };
-  }, [mobileMenuOpen]);
 
   async function execute(operation: () => Promise<unknown>, successMessage: string) {
     setNotice(null);
@@ -236,15 +194,15 @@ export function Workspace({ user, companyId, onSignOut }: { user: User; companyI
   const content = section === "overview"
     ? <Overview data={data} user={user} execute={execute} onNavigate={setSection} />
     : section === "team"
-      ? (selectedMemberId && (role === "ADMIN" || role === "LEADER")
-        ? <DevelopmentProfilePage key={selectedMemberId} data={data} employee={data.members.find((person) => person.uid === selectedMemberId)} execute={execute} onBack={() => setSelectedMemberId("")} />
-        : <TeamPage data={data} user={user} execute={execute} onOpenProfile={(employeeId) => setSelectedMemberId(employeeId)} />)
+      ? ((role === "ADMIN" || role === "LEADER") && selectedMemberId ? <DevelopmentProfilePage key={selectedMemberId} data={data} employee={data.members.find((person) => person.uid === selectedMemberId)} execute={execute} onBack={() => setSelectedMemberId("")} /> : <TeamPage data={data} user={user} execute={execute} onOpenProfile={(employeeId) => setSelectedMemberId(employeeId)} />)
       : section === "evaluations"
         ? <EvaluationsPage data={data} user={user} refresh={refresh} execute={execute} />
         : section === "ranking"
           ? role === "ADMIN" ? <RankingPage data={data}/> : <Overview data={data} user={user} execute={execute} onNavigate={setSection}/>
         : section === "cycles"
           ? role === "ADMIN" ? <ConfigurationPage data={data} execute={execute} /> : <Overview data={data} user={user} execute={execute} onNavigate={setSection} />
+        : section === "customerFeedback"
+          ? role === "ADMIN" ? <CustomerFeedbackAdminPage companyId={companyId}/> : <Overview data={data} user={user} execute={execute} onNavigate={setSection}/>
         : section === "surveys"
           ? <SurveysPage data={data} execute={execute}/>
         : section === "checklists"
@@ -259,21 +217,17 @@ export function Workspace({ user, companyId, onSignOut }: { user: User; companyI
                   : <PromotionRequestsPage data={data} execute={execute}/>
               : section === "promotions"
                 ? role === "ADMIN" ? <PromotionRequestsPage data={data} execute={execute}/> : <Overview data={data} user={user} execute={execute} onNavigate={setSection} />
-                : section === "customerFeedback"
-                  ? role === "ADMIN" ? <CustomerFeedbackAdminPage companyId={companyId}/> : <Overview data={data} user={user} execute={execute} onNavigate={setSection}/>
-                  : <CompanyPage data={data} execute={execute} />;
+                : <CompanyPage data={data} execute={execute} />;
 
   return (
     <div className="live-app">
-      {mobileMenuOpen && <button type="button" className="mobile-menu-backdrop" aria-label="Fechar menu" onClick={() => setMobileMenuOpen(false)}/>}
-      <aside id="workspace-navigation" ref={mobileMenuRef} className={`live-sidebar${mobileMenuOpen ? " is-open" : ""}`} role={mobileMenuOpen ? "dialog" : undefined} aria-modal={mobileMenuOpen || undefined} aria-label={mobileMenuOpen ? "Menu de navegação" : undefined}>
-        <button ref={mobileMenuCloseRef} type="button" className="mobile-menu-close" onClick={() => setMobileMenuOpen(false)}><X size={19} aria-hidden="true"/><span>Fechar menu</span></button>
+      <aside className="live-sidebar">
         <div className="live-company"><CompanyLogo className="company-logo-sidebar"/><span><b>{data.company.name}</b><small>{roleNames[role]}</small></span></div>
         <p className="live-nav-label">MENU</p>
         <nav className="live-nav" aria-label="Navegação principal">
           {nav.map((item) => {
             const pendingCount = item.id === "evaluations" ? pendingEvaluationCount : item.id === "checklists" ? pendingChecklistCount : 0;
-            return <button key={item.id} type="button" aria-current={section === item.id ? "page" : undefined} className={section === item.id ? "active" : ""} onClick={() => { setSection(item.id); setSelectedMemberId(""); setNotice(null); setMobileMenuOpen(false); }}><span aria-hidden="true">{sectionIcons[item.id]}</span>{item.label}{pendingCount > 0 && <span className="live-nav-badge" aria-label={`${pendingCount} pendente${pendingCount === 1 ? "" : "s"}`}>{pendingCount}</span>}</button>;
+            return <button key={item.id} type="button" aria-current={section === item.id ? "page" : undefined} className={section === item.id ? "active" : ""} onClick={() => { setSection(item.id); setSelectedMemberId(""); setNotice(null); }}><span aria-hidden="true">{sectionIcons[item.id]}</span>{item.label}{pendingCount > 0 && <span className="live-nav-badge" aria-label={`${pendingCount} pendente${pendingCount === 1 ? "" : "s"}`}>{pendingCount}</span>}</button>;
           })}
         </nav>
         <div className="live-sidebar-bottom">
@@ -289,16 +243,7 @@ export function Workspace({ user, companyId, onSignOut }: { user: User; companyI
         </div>
       </aside>
       <main className="live-main">
-        <header className="live-topbar">
-          <button ref={mobileMenuTriggerRef} type="button" className="mobile-menu-trigger" aria-expanded={mobileMenuOpen} aria-controls="workspace-navigation" onClick={() => setMobileMenuOpen(true)}>
-            <List size={20} weight="bold" aria-hidden="true"/>
-            <CompanyLogo className="company-logo-sidebar"/>
-            <span className="mobile-menu-heading"><b>{data.company.name}</b><small>{nav.find((item) => item.id === section)?.label ?? "Menu"}</small></span>
-            <span className="mobile-menu-trigger-label">Menu</span>
-          </button>
-          <div className="live-connection-status"><span className="live-status-dot"/> Conectado</div>
-          <div className="live-topbar-actions"><ThemeToggle/><button type="button" className="button button-outline button-small topbar-signout" aria-label="Sair da conta" title="Sair da conta" onClick={onSignOut}><SignOut size={15} weight="regular"/><span>Sair</span></button><button type="button" className="button button-outline button-small" onClick={() => void refresh(true)} disabled={refreshing}>{refreshing ? "Atualizando…" : "Atualizar"}</button></div>
-        </header>
+        <header className="live-topbar"><div><span className="live-status-dot"/> Conectado</div><div className="live-topbar-actions"><ThemeToggle/><button type="button" className="button button-outline button-small topbar-signout" aria-label="Sair da conta" title="Sair da conta" onClick={onSignOut}><SignOut size={15} weight="regular"/><span>Sair</span></button><button type="button" className="button button-outline button-small" onClick={() => void refresh(true)} disabled={refreshing}>{refreshing ? "Atualizando…" : "Atualizar"}</button></div></header>
         <div className="live-content">
           {notice && <div className={`live-notice ${notice.kind}`} role="status">{notice.text}</div>}
           {loadError && <div className="live-notice error" role="alert">{loadError}</div>}
@@ -602,19 +547,16 @@ function MemberRow({ member, teams, departments, jobTitles, editable, onOpenProf
 function LeaderDevelopmentPage({ data, onOpenProfile }: { data: WorkspaceData; onOpenProfile: (employeeId: string) => void }) {
   const employees = data.members.filter((person) => person.role === "EMPLOYEE" && person.status === "ACTIVE");
   return <>
-    <PageHeading eyebrow="DESENVOLVIMENTO DA EQUIPE" title="Avaliações de Promoção/PDI" subtitle="Avalie os indicadores e as competências dos colaboradores para recomendar uma promoção." />
+    <PageHeading title="Avaliações de Promoção/PDI" subtitle="Avalie os indicadores e as competências dos colaboradores para recomendar uma promoção." />
     {data.developmentAccessAvailable === false && <div className="live-notice error" role="alert">O Firestore recusou a leitura dos dados de PDI para este perfil. Recarregue a pagina; se persistir, confira as permissoes da conta nas regras do projeto.</div>}
     {data.restrictedPromotionHistory && <div className="live-notice" role="status">Registros antigos que incluem evidências de avaliações convencionais estão restritos à administração. As avaliações originais permanecem preservadas.</div>}
     <section className="live-panel development-panel">
-      <div className="live-panel-heading"><div><span className="eyebrow">SUA EQUIPE</span><h2>{employees.length} colaborador(es)</h2></div></div>
+      <div className="live-panel-heading"><div><h2>{employees.length} {plural(employees.length, "colaborador", "colaboradores")}</h2></div></div>
       {employees.length ? <div className="development-member-list">{employees.map((employee) => {
         const plan = data.developmentPlans.find((item) => item.employeeId === employee.uid);
-        const careerProgress = getPromotionCareerProgress(employee.positionTitle);
         const latestRequest = data.promotionRequests.filter((request) => request.employeeId === employee.uid).sort((a, b) => timestampMillis(b.submittedAt) - timestampMillis(a.submittedAt))[0];
         return <article className="development-member-card" key={employee.uid}>
-          <div className="development-member-identity"><span className="live-avatar" aria-hidden="true">{initials(employee.name)}</span><div><h3>{employee.name}</h3><p>{employee.positionTitle || "Cargo atual não informado"}{plan?.status === "PROMOTED"
-            ? careerProgress.nextPosition ? ` · Próximo cargo: ${careerProgress.nextPosition}` : " · Último cargo da sequência"
-            : plan ? ` · Próximo cargo: ${plan.targetPosition}` : " · Sem avaliação enviada"}</p></div></div>
+          <div className="development-member-identity"><span className="live-avatar" aria-hidden="true">{initials(employee.name)}</span><div><h3>{employee.name}</h3><p>{employee.positionTitle || "Cargo atual não informado"}{plan ? ` · Próximo cargo: ${plan.targetPosition}` : " · Sem avaliação enviada"}</p></div></div>
           <div className="development-member-status">{latestRequest?.status === "PENDING" ? <span className="status-chip pending"><Clock size={14}/> Indicação em análise</span> : latestRequest?.status === "REJECTED" ? <span className="status-chip pending"><XCircle size={14}/> Indicação reprovada</span> : latestRequest?.status === "APPROVED" || plan?.status === "PROMOTED" ? <span className="status-chip done"><CheckCircle size={14}/> Promoção aprovada</span> : <span className="status-chip">Avaliação não enviada</span>}</div>
           <button type="button" className="button button-outline button-small" onClick={() => onOpenProfile(employee.uid)}>{plan?.status === "PROMOTED" ? "Criar outro PDI" : plan ? "Gerenciar PDI" : "Criar PDI"} <ArrowLeft className="development-open-arrow" size={15}/></button>
         </article>;
@@ -626,10 +568,10 @@ function LeaderDevelopmentPage({ data, onOpenProfile }: { data: WorkspaceData; o
 function MyDevelopmentPage({ data, user }: { data: WorkspaceData; user: User }) {
   const plan = data.developmentPlans.find((item) => item.employeeId === user.uid);
   return <>
-    <PageHeading eyebrow="SEU DESENVOLVIMENTO" title="Meu PDI" subtitle="Acompanhe o andamento da sua avaliação para promoção." />
+    <PageHeading title="Meu PDI" subtitle="Acompanhe o andamento da sua avaliação para promoção." />
     {data.developmentAccessAvailable === false && <div className="live-notice error" role="alert">O Firestore recusou a leitura dos dados de PDI para este perfil. Recarregue a pagina; se persistir, confira as permissoes da conta nas regras do projeto.</div>}
     {plan ? <section className="live-panel development-panel">
-      <div className="development-plan-summary"><div><span className="eyebrow">CARGO AVALIADO</span><h2>{plan.targetPosition}</h2><p>Cargo atual: {data.member.positionTitle || "Não informado"}</p></div>{plan.status === "PROMOTED" ? <span className="status-chip done"><CheckCircle size={15}/> Promoção aprovada</span> : <span className="status-chip pending">Avaliação enviada para análise</span>}</div>
+      <div className="development-plan-summary"><div><span className="eyebrow">Cargo avaliado</span><h2>{plan.targetPosition}</h2><p>Cargo atual: {data.member.positionTitle || "Não informado"}</p></div>{plan.status === "PROMOTED" ? <span className="status-chip done"><CheckCircle size={15}/> Promoção aprovada</span> : <span className="status-chip pending">Avaliação enviada para análise</span>}</div>
       <p className="development-inline-note">A avaliação considera indicadores de desempenho e competências preenchidos pela liderança. Para dúvidas sobre o resultado, procure sua liderança.</p>
     </section> : <section className="live-panel"><EmptyState title="Sua avaliação ainda não foi enviada" text="Quando sua liderança iniciar uma avaliação de Promoção/PDI, o cargo desejado e o andamento aparecerão nesta página."/></section>}
   </>;
@@ -637,21 +579,21 @@ function MyDevelopmentPage({ data, user }: { data: WorkspaceData; user: User }) 
 
 function DevelopmentProfilePage({ data, employee, execute, onBack }: { data: WorkspaceData; employee?: DocumentWithId<CompanyMember>; execute: (operation: () => Promise<unknown>, message: string) => Promise<boolean>; onBack: () => void }) {
   const plan = employee ? data.developmentPlans.find((item) => item.employeeId === employee.uid) : undefined;
-  const latestSavedPromotion = employee
-    ? data.promotionRequests
-      .filter((request) => request.employeeId === employee.uid)
-      .sort((a, b) => timestampMillis(b.submittedAt) - timestampMillis(a.submittedAt))[0]
-    : undefined;
   const [promotionHistory, setPromotionHistory] = useState<Array<DocumentWithId<PromotionRequestDocument>>>([]);
   const [historyRequested, setHistoryRequested] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
   const [historyAttempt, setHistoryAttempt] = useState(0);
-  const [showPromotionForm, setShowPromotionForm] = useState(false);
   const [justification, setJustification] = useState("");
   const [promotionIndicators, setPromotionIndicators] = useState(() => restorePromotionEvaluationInputs().indicators);
   const [promotionCompetencies, setPromotionCompetencies] = useState(() => restorePromotionEvaluationInputs().competencies);
   const [requesting, setRequesting] = useState(false);
+  const ownRequests = employee
+    ? data.promotionRequests
+      .filter((request) => request.employeeId === employee.uid)
+      .sort((a, b) => timestampMillis(b.submittedAt) - timestampMillis(a.submittedAt))
+    : [];
+  const latestSavedPromotion = ownRequests[0];
   useEffect(() => {
     const savedInputs = restorePromotionEvaluationInputs(latestSavedPromotion);
     setPromotionIndicators(savedInputs.indicators);
@@ -664,13 +606,13 @@ function DevelopmentProfilePage({ data, employee, execute, onBack }: { data: Wor
     setHistoryError("");
     loadPromotionHistory(data.company.id ?? "", employee.uid)
       .then((history) => {
-        if (!active) return;
-        setPromotionHistory(history.sort((first, second) =>
-          timestampMillis(second.submittedAt) - timestampMillis(first.submittedAt)));
+        if (active) {
+          setPromotionHistory(history.sort((first, second) =>
+            timestampMillis(second.submittedAt) - timestampMillis(first.submittedAt)));
+        }
       })
       .catch((error: unknown) => {
-        if (!active) return;
-        setHistoryError(error instanceof Error ? error.message : "Não foi possível carregar o histórico de promoção.");
+        if (active) setHistoryError(error instanceof Error ? error.message : "Não foi possível carregar o histórico de promoção.");
       })
       .finally(() => {
         if (active) setHistoryLoading(false);
@@ -685,9 +627,7 @@ function DevelopmentProfilePage({ data, employee, execute, onBack }: { data: Wor
   const sharedTeamIds = profileEmployee.teamIds.filter((teamId) => data.member.teamIds.includes(teamId));
   const isOwner = isAdmin || sharedTeamIds.length > 0;
   const canManagePdi = !isAdmin && isOwner && data.developmentAccessAvailable;
-  const ownRequests = data.promotionRequests.filter((request) => request.employeeId === profileEmployee.uid).sort((a, b) => timestampMillis(b.submittedAt) - timestampMillis(a.submittedAt));
   const displayedPromotionHistory = isAdmin ? ownRequests : promotionHistory;
-  const pendingRequestCount = ownRequests.filter((request) => request.status === "PENDING").length;
   const pendingRequest = ownRequests.find((request) => request.status === "PENDING");
   const evaluationSnapshots = data.evaluations
     .filter((evaluation) => evaluation.type === "EMPLOYEE" && evaluation.evaluatedUserId === employee.uid && evaluation.status === "SUBMITTED" && typeof evaluation.averageScore === "number")
@@ -701,7 +641,6 @@ function DevelopmentProfilePage({ data, employee, execute, onBack }: { data: Wor
       submittedAt: evaluation.submittedAt,
     }));
   const promotionPreview = promotionResultPreview(promotionIndicators, promotionCompetencies);
-  const canStartPromotion = !pendingRequest && canManagePdi && Boolean(careerProgress.nextPosition);
 
   async function submitRequest() {
     if (!promotionPreview?.complete || !careerProgress.nextPosition || justification.trim().length < 20) return;
@@ -716,19 +655,48 @@ function DevelopmentProfilePage({ data, employee, execute, onBack }: { data: Wor
     setRequesting(false);
   }
 
-  if (showPromotionForm && canStartPromotion) {
-    return <>
-      <div className="development-back-row"><button type="button" className="text-link" onClick={() => setShowPromotionForm(false)}><ArrowLeft size={16}/> Voltar ao perfil</button></div>
-      <PageHeading
-        eyebrow="AVALIAÇÃO DE PROMOÇÃO/PDI"
-        title={`PDI de ${profileEmployee.name}`}
-        subtitle="Preencha a avaliação para recomendar a progressão ao próximo cargo."
-      />
-      <section className="live-panel development-panel">
+  return <>
+    <div className="development-back-row"><button type="button" className="text-link" onClick={onBack}><ArrowLeft size={16}/> Voltar para equipe</button></div>
+    <PageHeading title={employee.name} subtitle={`${employee.email} · Cargo atual: ${employee.positionTitle || "Não informado"}`} />
+    {data.developmentAccessAvailable === false && <div className="live-notice error" role="alert">O Firestore recusou a leitura dos dados de PDI para este perfil. Recarregue a página; se persistir, confira as permissões da conta nas regras do projeto.</div>}
+    {data.restrictedPromotionHistory && <div className="live-notice" role="status">Registros antigos que incluem evidências de avaliações convencionais estão restritos à administração. As avaliações originais permanecem preservadas.</div>}
+    {!isAdmin && !sharedTeamIds.length && <div className="form-alert error">Este colaborador não está mais em uma equipe compartilhada com você. O PDI fica disponível somente para liderança da equipe.</div>}
+    {plan?.status === "PROMOTED" && <div className="development-approved-banner"><CheckCircle size={20}/><span><b>Promoção aprovada</b><small>O cargo do colaborador foi atualizado para {employee.positionTitle || plan.targetPosition}.</small></span></div>}
+    {plan && !isOwner && <div className="form-alert">Este PDI é gerenciado por outra liderança. Você pode acompanhar a avaliação, mas não enviar uma nova indicação.</div>}
+    <section className="live-panel development-panel">
+      <div className="live-panel-heading"><div><h2>Indicadores e competências</h2></div></div>
+      {pendingRequest && <div className="promotion-status-banner"><Clock size={18}/><span><b>Indicação em análise</b><small>Enviada em {formatDateLike(pendingRequest.submittedAt)}. O andamento é restrito à liderança e à administração.</small></span></div>}
+      <details className="promotion-history-accordion">
+        <summary onClick={() => {
+          if (!isAdmin && !historyRequested) setHistoryRequested(true);
+        }}>
+          <span>Histórico de promoção</span>
+          <span className="development-completed-count">{isAdmin ? displayedPromotionHistory.length : historyLoading ? "…" : displayedPromotionHistory.length}</span>
+          <small>{pendingRequest ? "Há uma indicação em análise" : "Indicações, decisões e avaliações anteriores"}</small>
+        </summary>
+        <div className="promotion-history-list">
+          {historyLoading && <p className="development-inline-note" role="status">Carregando histórico…</p>}
+          {historyError && <div className="live-notice error" role="alert">{historyError}<button type="button" className="button button-outline button-small" onClick={() => setHistoryAttempt((attempt) => attempt + 1)}>Tentar novamente</button></div>}
+          {!historyLoading && !historyError && displayedPromotionHistory.length
+            ? displayedPromotionHistory.map((request) => <article className="promotion-history-entry" key={request.id}>
+              <header>
+                <div><h3>{request.targetPosition}</h3><p>Enviada em {formatDateLike(request.submittedAt)}{request.decidedAt ? ` · Decidida em ${formatDateLike(request.decidedAt)}` : ""}</p></div>
+                <span className={`status-chip ${request.status === "APPROVED" ? "done" : "pending"}`}>
+                  {request.status === "PENDING" ? "Em análise" : request.status === "APPROVED" ? "Aprovada" : "Reprovada"}
+                </span>
+              </header>
+              {request.justification && <div className="promotion-history-note"><b>Justificativa da liderança</b><p>{request.justification}</p></div>}
+              {request.adminNote && <div className="promotion-history-note"><b>Observação da administração</b><p>{request.adminNote}</p></div>}
+              <PromotionScoringSnapshot request={request}/>
+            </article>)
+            : !historyLoading && !historyError && <p className="development-inline-note">Ainda não há indicações de promoção para este colaborador.</p>}
+        </div>
+      </details>
+      {!pendingRequest && canManagePdi && careerProgress.nextPosition && <>
         <div className="promotion-career-step">
           <span className="eyebrow">PROGRESSÃO DE CARGO</span>
           <b>{careerProgress.currentPosition} <ArrowUpRight size={15}/> {careerProgress.nextPosition}</b>
-          <small>O cargo só muda após a aprovação da administração.</small>
+          <small>O próximo cargo é definido automaticamente pela sequência. A alteração só ocorre após aprovação da administração.</small>
         </div>
         <PromotionRequestForm
           justification={justification}
@@ -745,59 +713,12 @@ function DevelopmentProfilePage({ data, employee, execute, onBack }: { data: Wor
           requesting={requesting}
           onSubmit={() => void submitRequest()}
         />
-      </section>
-    </>;
-  }
-
-  return <>
-    <div className="development-back-row"><button type="button" className="text-link" onClick={onBack}><ArrowLeft size={16}/> Voltar para equipe</button></div>
-    <PageHeading eyebrow="PERFIL DO COLABORADOR" title={employee.name} subtitle={`${employee.email} · Cargo atual: ${employee.positionTitle || "Não informado"}`} />
-    {data.developmentAccessAvailable === false && <div className="live-notice error" role="alert">O Firestore recusou a leitura dos dados de PDI para este perfil. Recarregue a página; se persistir, confira as permissões da conta nas regras do projeto.</div>}
-    {data.restrictedPromotionHistory && <div className="live-notice" role="status">Registros antigos que incluem evidências de avaliações convencionais estão restritos à administração. As avaliações originais permanecem preservadas.</div>}
-    {!isAdmin && !sharedTeamIds.length && <div className="form-alert error">Este colaborador não está mais em uma equipe compartilhada com você. O PDI fica disponível somente para liderança da equipe.</div>}
-    {plan && !isOwner && <div className="form-alert">Este PDI é gerenciado por outra liderança. Você pode acompanhar a avaliação, mas não enviar uma nova indicação.</div>}
-    <section className="live-panel development-panel">
-      <details className="promotion-history-accordion">
-        <summary onClick={() => {
-          if (!isAdmin && !historyRequested) setHistoryRequested(true);
-        }}>
-          <span>Histórico de promoção</span>
-          <span className="development-completed-count">{isAdmin ? displayedPromotionHistory.length : historyLoading ? "…" : displayedPromotionHistory.length}</span>
-          <small>{pendingRequestCount ? `${pendingRequestCount} indicação em análise` : "Indicações, decisões e avaliações anteriores"}</small>
-        </summary>
-        <div className="promotion-history-list">
-          {historyLoading && <p className="development-inline-note" role="status">Carregando histórico…</p>}
-          {historyError && <div className="live-notice error" role="alert">{historyError}<button type="button" className="button button-outline button-small" onClick={() => setHistoryAttempt((attempt) => attempt + 1)}>Tentar novamente</button></div>}
-          {!historyLoading && !historyError && displayedPromotionHistory.length ? displayedPromotionHistory.map((request) => <article className="promotion-history-entry" key={request.id}>
-            <header>
-              <div><h3>{request.targetPosition}</h3><p>Enviada em {formatDateLike(request.submittedAt)}{request.decidedAt ? ` · Decidida em ${formatDateLike(request.decidedAt)}` : ""}</p></div>
-              <span className={`status-chip ${request.status === "APPROVED" ? "done" : "pending"}`}>
-                {request.status === "PENDING" ? "Em análise" : request.status === "APPROVED" ? "Aprovada" : "Reprovada"}
-              </span>
-            </header>
-            <details className="promotion-completed-details">
-              <summary>Ver detalhes da avaliação anterior</summary>
-              {request.justification && <div className="promotion-history-note"><b>Justificativa da liderança</b><p>{request.justification}</p></div>}
-              {request.adminNote && <div className="promotion-history-note"><b>Observação da administração</b><p>{request.adminNote}</p></div>}
-              <PromotionScoringSnapshot request={request}/>
-            </details>
-          </article>) : !historyLoading && !historyError && <p className="development-inline-note">Ainda não há indicações de promoção para este colaborador.</p>}
-        </div>
-      </details>
-      {canManagePdi && <section className="promotion-next-step">
-        <div><span className="eyebrow">{pendingRequest ? "INDICAÇÃO EM ANDAMENTO" : "PRÓXIMA ETAPA"}</span>
-          <h2>{pendingRequest ? "PDI enviado para análise" : careerProgress.nextPosition ? "Avaliar próximo cargo" : careerProgress.isFinalPosition ? "Último cargo da sequência" : "Cargo fora da sequência"}</h2>
-          <p>{pendingRequest
-            ? "Aguarde a decisão da administração. O histórico acima contém os detalhes da indicação."
-            : careerProgress.nextPosition
-              ? `${careerProgress.currentPosition} → ${careerProgress.nextPosition}. O preenchimento será feito em uma tela própria.`
-              : careerProgress.isFinalPosition
-                ? "Este colaborador já alcançou o último cargo configurado."
-                : "Peça à administração para atualizar o cargo atual antes de iniciar o PDI."}</p>
-        </div>
-        {canStartPromotion && <button type="button" className="button button-primary" onClick={() => setShowPromotionForm(true)}>Abrir avaliação do PDI <ArrowUpRight size={16}/></button>}
-      </section>}
-      {!pendingRequest && !isAdmin && !canManagePdi && isOwner && <p className="development-inline-note">A avaliação não está disponível enquanto os dados de Promoção/PDI não puderem ser carregados.</p>}
+      </>}
+      {!pendingRequest && canManagePdi && !careerProgress.nextPosition && <p className="development-inline-note">{careerProgress.isFinalPosition
+        ? "Este colaborador já chegou ao último cargo configurado na sequência."
+        : "O cargo atual não está na sequência de carreira. Peça à administração para atualizá-lo antes de iniciar um novo PDI."}</p>}
+      {!pendingRequest && !canManagePdi && !isAdmin && isOwner && <p className="development-inline-note">A avaliação não está disponível enquanto os dados de Promoção/PDI não puderem ser carregados.</p>}
+      {isAdmin && <p className="development-inline-note">A administração pode consultar o histórico aqui. O preenchimento do PDI é feito pela liderança da equipe.</p>}
     </section>
   </>;
 }
@@ -924,7 +845,7 @@ function PromotionRequestForm({
       </section>
     </div>
     <div className="promotion-evidence-summary">
-      <b>{evaluationCount} avaliação(ões) convencionais serão anexadas como histórico</b>
+      <b>{evaluationCount} {plural(evaluationCount, "avaliação convencional será anexada", "avaliações convencionais serão anexadas")} como histórico</b>
       {averageEvaluationScore === null
         ? <small>Não há avaliações convencionais concluídas para anexar no momento.</small>
         : <small>Média histórica das notas: {averageEvaluationScore.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / 5. Esta média não participa do cálculo de promoção.</small>}
@@ -991,10 +912,10 @@ function PromotionRequestsPage({ data, execute }: { data: WorkspaceData; execute
   });
   const hasFilters = Boolean(term || statusFilter);
   return <>
-    <PageHeading eyebrow="ADMINISTRAÇÃO" title="Indicações de promoção" subtitle="Analise a avaliação por indicadores e competências antes de decidir." />
+    <PageHeading title="Indicações de promoção" subtitle="Analise a avaliação por indicadores e competências antes de decidir." />
     {data.developmentAccessAvailable === false && <div className="live-notice error" role="alert">O Firestore recusou a leitura dos dados de PDI para este perfil. Recarregue a pagina; se persistir, confira as permissoes da conta nas regras do projeto.</div>}
     <section className="live-panel development-panel">
-      <div className="live-panel-heading"><div><span className="eyebrow">FILA DE ANÁLISE</span><h2>{pendingCount} pendente(s) · {allRequests.length} no histórico</h2></div></div>
+      <div className="live-panel-heading"><div><h2>{pendingCount} {plural(pendingCount, "pendente", "pendentes")} · {allRequests.length} no histórico</h2></div></div>
       <div className="filter-bar" role="search">
         <label className="filter-field filter-field-grow">Buscar<input type="search" className="filter-input" value={search} placeholder="Colaborador ou cargo desejado" onChange={(event) => setSearch(event.target.value)}/></label>
         <label className="filter-field">Situação<select className="filter-input" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "" | "PENDING" | "APPROVED" | "REJECTED")}><option value="">Todas as situações</option><option value="PENDING">Pendentes</option><option value="APPROVED">Aprovadas</option><option value="REJECTED">Reprovadas</option></select></label>
@@ -1386,21 +1307,21 @@ function ConfigurationPage({ data, execute }: { data: WorkspaceData; execute: (o
   ];
 
   return <>
-    <PageHeading eyebrow="CONFIGURAÇÃO DA EMPRESA" title="Configurações" subtitle="Organize a estrutura da empresa e prepare as avaliações em etapas."/>
+    <PageHeading title="Configurações" subtitle="Organize a estrutura da empresa e prepare as avaliações em etapas."/>
     <section className="configuration-workspace" aria-label="Configurações da empresa">
-      <div className="configuration-navigation"><ExpandingTabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} ariaLabel="Etapas de configuração"/></div>
+      <div className="configuration-navigation"><ConfigTabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} ariaLabel="Etapas de configuração"/></div>
       <div className="configuration-panel" id="configuration-panel" role="tabpanel" aria-labelledby={`expanding-tab-${activeTab}`}>
         {activeTab === "structure" && <>
-          <div className="configuration-intro"><span className="eyebrow">ETAPA 1 · ORGANIZAÇÃO</span><h2>Monte a estrutura da empresa</h2><p>Cadastre primeiro os setores e depois as equipes que pertencem a cada um.</p></div>
-          <div className="configuration-structure-note"><b>Setor → Equipe</b><span>Exemplo: Vendas → Loja Centro. Cada equipe pertence a um único setor.</span></div>
+          <div className="configuration-intro"><h2>Monte a estrutura da empresa</h2><p>Cadastre primeiro os setores e depois as equipes que pertencem a cada um.</p></div>
+          <div className="configuration-structure-note"><b>Como se organizam</b><span>Cada equipe pertence a um único setor. Exemplo: o setor Vendas tem a equipe Loja Centro.</span></div>
           <div className="configuration-structure-grid"><DepartmentManager data={data} execute={execute}/><TeamManager data={data} execute={execute}/></div>
         </>}
         {activeTab === "criteria" && <>
-          <div className="configuration-intro"><span className="eyebrow">ETAPA 2 · AVALIAÇÕES</span><h2>Defina os critérios</h2><p>Os critérios ativos aparecem nos formulários de avaliação do tipo selecionado.</p></div>
+          <div className="configuration-intro"><h2>Defina os critérios</h2><p>Os critérios ativos aparecem nos formulários de avaliação do tipo selecionado.</p></div>
           <div className="configuration-single-manager"><CriterionManager data={data} execute={execute}/></div>
         </>}
         {activeTab === "cycles" && <>
-          <div className="configuration-intro"><span className="eyebrow">ETAPA 3 · PERÍODOS</span><h2>Programe os ciclos de avaliação</h2><p>Defina o período e abra o ciclo quando estiver pronto para receber avaliações.</p></div>
+          <div className="configuration-intro"><h2>Programe os ciclos de avaliação</h2><p>Defina o período e abra o ciclo quando estiver pronto para receber avaliações.</p></div>
           <div className="configuration-single-manager"><CycleManager data={data} execute={execute}/></div>
         </>}
       </div>
@@ -1414,7 +1335,7 @@ function DepartmentManager({ data, execute }: { data: WorkspaceData; execute: (o
   const [editName, setEditName] = useState("");
   return <section className="live-panel configuration-stage configuration-stage-departments">
     <div className="live-panel-heading">
-      <div><span className="eyebrow">ETAPA 01 · SETORES</span><h2>Cadastre as áreas da empresa</h2></div>
+      <div><h2>Cadastre as áreas da empresa</h2></div>
       <span className="configuration-stage-total">{data.departments.length} setor{data.departments.length === 1 ? "" : "es"}</span>
     </div>
     <p className="org-manager-help">Crie as áreas principais, como Vendas, Operações ou Atendimento. Depois, associe equipes a cada setor.</p>
@@ -1454,7 +1375,7 @@ function TeamManager({ data, execute }: { data: WorkspaceData; execute: (operati
   const [editName, setEditName] = useState("");
   return <section className="live-panel configuration-stage configuration-stage-teams">
     <div className="live-panel-heading">
-      <div><span className="eyebrow">ETAPA 02 · EQUIPES</span><h2>Organize as equipes por setor</h2></div>
+      <div><h2>Organize as equipes por setor</h2></div>
       <span className="configuration-stage-total">{data.teams.length} equipe{data.teams.length === 1 ? "" : "s"}</span>
     </div>
     <p className="org-manager-help">Escolha um setor para cada equipe. As pessoas podem ser associadas às equipes na área Pessoas e equipes.</p>
@@ -1497,7 +1418,7 @@ function CriterionManager({ data, execute }: { data: WorkspaceData; execute: (op
   const [editingId, setEditingId] = useState("");
   const [editName, setEditName] = useState("");
   return <section className="live-panel">
-    <div className="live-panel-heading"><div><span className="eyebrow">AVALIAÇÕES</span><h2>Critérios</h2></div></div>
+    <div className="live-panel-heading"><div><h2>Critérios</h2></div></div>
     <form className="stack-form" onSubmit={async (event) => {
       event.preventDefault();
       const order = data.criteria.filter((item) => item.evaluationType === type).length;
@@ -1591,7 +1512,7 @@ function CycleManager({ data, execute }: { data: WorkspaceData; execute: (operat
   }
 
   return <section className="live-panel">
-    <div className="live-panel-heading"><div><span className="eyebrow">PERÍODOS</span><h2>Ciclos de avaliação</h2></div></div>
+    <div className="live-panel-heading"><div><h2>Ciclos de avaliação</h2></div></div>
     <p className="org-manager-help">Crie uma avaliação pontual com critérios existentes e datas específicas. Somente um ciclo pode ficar aberto por vez.</p>
     <form className="stack-form" onSubmit={submitNewCycle}>
       <label>Nome<input required minLength={2} maxLength={100} value={name} onChange={(event) => setName(event.target.value)} placeholder="Ex.: Ciclo anual"/></label>
@@ -2054,8 +1975,8 @@ function ChecklistLeader({ data, user, execute }: { data: WorkspaceData; user: U
       dueAt,
       publishOn,
     }), publishOn === "TOMORROW"
-      ? `Checklist agendado para publicação em ${formatDate(publicationDate)} para ${assignedMemberIds.length} pessoa(s).`
-      : `Checklist publicado e atribuído a ${assignedMemberIds.length} pessoa(s).`);
+      ? `Checklist agendado para publicação em ${formatDate(publicationDate)} para ${assignedMemberIds.length} ${plural(assignedMemberIds.length, "pessoa", "pessoas")}.`
+      : `Checklist publicado e atribuído a ${assignedMemberIds.length} ${plural(assignedMemberIds.length, "pessoa", "pessoas")}.`);
 
     if (ok) {
       setTemplateId("");
@@ -2067,7 +1988,7 @@ function ChecklistLeader({ data, user, execute }: { data: WorkspaceData; user: U
     }
   }
   return <>
-    <PageHeading eyebrow="GESTÃO DA EQUIPE" title="Checklists da equipe" subtitle="Crie checklists para as equipes que você lidera e acompanhe suas próprias tarefas."/>
+    <PageHeading title="Checklists da equipe" subtitle="Crie checklists para as equipes que você lidera e acompanhe suas próprias tarefas."/>
     <section className="live-panel admin-checklist-flow">
       <ol className="admin-checklist-stepper" aria-label="Etapas para atribuir um checklist">
         {stepLabels.map((label, index) => {
@@ -2081,7 +2002,7 @@ function ChecklistLeader({ data, user, execute }: { data: WorkspaceData; user: U
       </ol>
 
       {step === 1 && <div className="admin-checklist-step">
-        <div className="live-panel-heading"><div><span className="eyebrow">ETAPA 1 DE 3</span><h2>Escolha um modelo</h2></div></div>
+        <div className="live-panel-heading"><div><span className="eyebrow">Etapa 1 de 3</span><h2>Escolha um modelo</h2></div></div>
         <p className="checklist-step-copy"><span>Use um dos seus modelos ou crie um novo para uma equipe vinculada ao seu perfil.</span></p>
         <div className="admin-checklist-mode" role="group" aria-label="Como selecionar o modelo">
           <button type="button" className={modelMode === "EXISTING" ? "selected" : ""} aria-pressed={modelMode === "EXISTING"} onClick={() => setModelMode("EXISTING")}>Usar modelo existente</button>
@@ -2097,7 +2018,7 @@ function ChecklistLeader({ data, user, execute }: { data: WorkspaceData; user: U
               </select>
             </label>
             {selectedTemplate && <div className="checklist-selected-summary">
-              <b>{selectedTemplate.items.length} tarefas</b>
+              <b>{selectedTemplate.items.length} {plural(selectedTemplate.items.length, "tarefa", "tarefas")}</b>
               <span>{(selectedTemplate.teamIds ?? []).map((teamId) => data.teams.find((team) => team.id === teamId)?.name).filter(Boolean).join(", ") || data.departments.find((department) => department.id === selectedTemplate.departmentId)?.name || "Equipe"} · {frequencyNames[selectedTemplate.frequency]}</span>
             </div>}
             <button type="button" className="button button-primary" disabled={!selectedTemplate} onClick={() => setStep(2)}>Continuar para o público</button>
@@ -2131,7 +2052,7 @@ function ChecklistLeader({ data, user, execute }: { data: WorkspaceData; user: U
             onDayOfMonthChange={setPublishDayOfMonth}
           />
           <div className="checklist-task-editor">
-            <div className="checklist-task-heading"><label>Tarefas</label><small>{items.filter((item) => item.trim()).length} adicionada(s)</small></div>
+            <div className="checklist-task-heading"><label>Tarefas</label><small>{items.filter((item) => item.trim()).length} {plural(items.filter((item) => item.trim()).length, "adicionada", "adicionadas")}</small></div>
             {items.map((item, index) => <div className="checklist-task-row" key={index}>
               <span>{index + 1}</span>
               <input aria-label={`Tarefa ${index + 1}`} required value={item} onChange={(event) => setItems((current) => current.map((value, itemIndex) => itemIndex === index ? event.target.value : value))} placeholder={index === 0 ? "Ex.: Conferir equipamentos" : "Descreva uma tarefa"}/>
@@ -2145,13 +2066,13 @@ function ChecklistLeader({ data, user, execute }: { data: WorkspaceData; user: U
       </div>}
 
       {step === 2 && selectedTemplate && <div className="admin-checklist-step">
-        <div className="live-panel-heading"><div><span className="eyebrow">ETAPA 2 DE 3</span><h2>Quem receberá?</h2></div></div>
-        <div className="checklist-selected-summary"><b>{selectedTemplate.name}</b><span>{selectedTemplate.items.length} tarefas · {(selectedTemplate.teamIds ?? []).map((teamId) => data.teams.find((team) => team.id === teamId)?.name).filter(Boolean).join(", ") || data.departments.find((department) => department.id === selectedTemplate.departmentId)?.name || "Equipe"}</span></div>
+        <div className="live-panel-heading"><div><span className="eyebrow">Etapa 2 de 3</span><h2>Quem receberá?</h2></div></div>
+        <div className="checklist-selected-summary"><b>{selectedTemplate.name}</b><span>{selectedTemplate.items.length} {plural(selectedTemplate.items.length, "tarefa", "tarefas")} · {(selectedTemplate.teamIds ?? []).map((teamId) => data.teams.find((team) => team.id === teamId)?.name).filter(Boolean).join(", ") || data.departments.find((department) => department.id === selectedTemplate.departmentId)?.name || "Equipe"}</span></div>
         <fieldset className="checklist-assignment-scope">
           <legend>Escolha o público</legend>
           <label className={`checklist-scope-option ${assignmentScope === "DEPARTMENT" ? "selected" : ""}`}>
             <input type="radio" name="checklist-scope" value="DEPARTMENT" checked={assignmentScope === "DEPARTMENT"} onChange={() => setAssignmentScope("DEPARTMENT")}/>
-            <span><b>Todas as pessoas das equipes</b><small>{(selectedTemplate.teamIds ?? []).map((teamId) => data.teams.find((team) => team.id === teamId)?.name).filter(Boolean).join(", ") || "Equipes vinculadas ao modelo"} · {eligibleMembers.length} pessoa(s) elegível(is)</small></span>
+            <span><b>Todas as pessoas das equipes</b><small>{(selectedTemplate.teamIds ?? []).map((teamId) => data.teams.find((team) => team.id === teamId)?.name).filter(Boolean).join(", ") || "Equipes vinculadas ao modelo"} · {eligibleMembers.length} {plural(eligibleMembers.length, "pessoa elegível", "pessoas elegíveis")}</small></span>
           </label>
           <label className={`checklist-scope-option ${assignmentScope === "PEOPLE" ? "selected" : ""}`}>
             <input type="radio" name="checklist-scope" value="PEOPLE" checked={assignmentScope === "PEOPLE"} onChange={() => setAssignmentScope("PEOPLE")}/>
@@ -2177,17 +2098,17 @@ function ChecklistLeader({ data, user, execute }: { data: WorkspaceData; user: U
       </div>}
 
       {step === 3 && selectedTemplate && <form className="admin-checklist-step" onSubmit={assignChecklist}>
-        <div className="live-panel-heading"><div><span className="eyebrow">ETAPA 3 DE 3</span><h2>Revise antes de atribuir</h2></div></div>
+        <div className="live-panel-heading"><div><span className="eyebrow">Etapa 3 de 3</span><h2>Revise antes de atribuir</h2></div></div>
         <div className="admin-checklist-review">
-          <div><small>CHECKLIST</small><b>{selectedTemplate.name}</b><span>{selectedTemplate.items.length} tarefas · {frequencyNames[selectedTemplate.frequency]}</span></div>
-          <div><small>DESTINATÁRIOS</small><b>{assignedMemberIds.length} pessoa(s)</b><span>{assignmentScope === "DEPARTMENT" ? "Todas as pessoas elegíveis das equipes" : "Pessoas selecionadas"}</span></div>
-          <div><small>PUBLICAÇÃO E PRAZO</small><b>{formatDate(publicationDate)}</b><span>{selectedTemplate.frequency === "CUSTOM" ? `Prazo ${assignmentDueAt ? formatDate(assignmentDueAt) : "não informado"}` : `Vence ${assignmentDueAt ? formatDate(assignmentDueAt) : "—"}`}</span></div>
+          <div><small>Checklist</small><b>{selectedTemplate.name}</b><span>{selectedTemplate.items.length} {plural(selectedTemplate.items.length, "tarefa", "tarefas")} · {frequencyNames[selectedTemplate.frequency]}</span></div>
+          <div><small>Destinatários</small><b>{assignedMemberIds.length} {plural(assignedMemberIds.length, "pessoa", "pessoas")}</b><span>{assignmentScope === "DEPARTMENT" ? "Todas as pessoas elegíveis das equipes" : "Pessoas selecionadas"}</span></div>
+          <div><small>Publicação e prazo</small><b>{formatDate(publicationDate)}</b><span>{selectedTemplate.frequency === "CUSTOM" ? `Prazo ${assignmentDueAt ? formatDate(assignmentDueAt) : "não informado"}` : `Vence ${assignmentDueAt ? formatDate(assignmentDueAt) : "—"}`}</span></div>
         </div>
         <div className="admin-checklist-review-people">
           <b>Quem receberá</b>
           {selectedPeople.length <= 5
             ? <p>{selectedPeople.map((member) => member.name).join(", ")}</p>
-            : <p>{selectedPeople.slice(0, 5).map((member) => member.name).join(", ")} e mais {selectedPeople.length - 5} pessoa(s)</p>}
+            : <p>{selectedPeople.slice(0, 5).map((member) => member.name).join(", ")} e mais {selectedPeople.length - 5} {plural(selectedPeople.length - 5, "pessoa", "pessoas")}</p>}
         </div>
         <div className="admin-checklist-actions">
           <button type="button" className="button button-outline" onClick={() => setStep(2)}>Editar público e prazo</button>
@@ -2200,7 +2121,7 @@ function ChecklistLeader({ data, user, execute }: { data: WorkspaceData; user: U
 
     <section className="live-panel checklist-models-panel">
       <div className="checklist-models-heading">
-        <span><span className="eyebrow">GERENCIAR</span><b>Modelos de checklist</b></span>
+        <span><b>Modelos de checklist</b></span>
         <span className="checklist-models-count">{modelTerm ? `${visibleModels.length} de ${data.templates.length}` : `${data.templates.length} ${data.templates.length === 1 ? "modelo" : "modelos"}`}</span>
       </div>
       <div className="checklist-models-content">
@@ -2235,13 +2156,13 @@ function ChecklistLeader({ data, user, execute }: { data: WorkspaceData; user: U
         )}{!data.templates.length && <p className="empty-inline">Seus modelos salvos aparecerão aqui.</p>}{data.templates.length > 0 && !visibleModels.length && <p className="empty-inline">Nenhum modelo corresponde à busca.</p>}</div>
       </div>
     </section>
-    <section className="live-panel"><div className="live-panel-heading"><div><span className="eyebrow">MINHAS TAREFAS</span><h2>Checklists atribuídos a você</h2></div></div><AssignmentList data={{ ...data, assignments: data.assignments.filter((assignment) => assignment.assignedToId === user.uid) }} user={user} execute={execute}/></section>
+    <section className="live-panel"><div className="live-panel-heading"><div><h2>Checklists atribuídos a você</h2></div></div><AssignmentList data={{ ...data, assignments: data.assignments.filter((assignment) => assignment.assignedToId === user.uid) }} user={user} execute={execute}/></section>
   </>;
 }
 
 function LeaderChecklistProgress({ data, user }: { data: WorkspaceData; user: User }) {
   const teamAssignments = data.assignments.filter((assignment) => assignment.assignedToId !== user.uid);
-  if (!teamAssignments.length) return <section className="live-panel"><div className="live-panel-heading"><div><span className="eyebrow">ACOMPANHAMENTO</span><h2>Progresso da equipe</h2></div></div><EmptyState title="Ainda não há checklists para a equipe" text="As atribuições feitas para colaboradores das suas equipes aparecerão aqui."/></section>;
+  if (!teamAssignments.length) return <section className="live-panel"><div className="live-panel-heading"><div><h2>Progresso da equipe</h2></div></div><EmptyState title="Ainda não há checklists para a equipe" text="As atribuições feitas para colaboradores das suas equipes aparecerão aqui."/></section>;
 
   const grouped = new Map<string, {
     name: string;
@@ -2268,7 +2189,7 @@ function LeaderChecklistProgress({ data, user }: { data: WorkspaceData; user: Us
   }
 
   return <section className="live-panel admin-checklist-progress">
-    <div className="live-panel-heading"><div><span className="eyebrow">ACOMPANHAMENTO</span><h2>Progresso da equipe</h2></div></div>
+    <div className="live-panel-heading"><div><h2>Progresso da equipe</h2></div></div>
     <div className="admin-progress-groups">{[...grouped.entries()].map(([key, group]) => {
       const people = [...group.people.values()];
       const completed = people.filter((person) => person.assignments.every((assignment) => assignment.completed));
@@ -2276,7 +2197,7 @@ function LeaderChecklistProgress({ data, user }: { data: WorkspaceData; user: Us
       const overdueCount = pending.filter((person) => person.assignments.some((assignment) => assignment.overdue)).length;
       const percent = people.length ? Math.round(completed.length / people.length * 100) : 0;
       return <article className="admin-progress-group" key={key}>
-        <div className="admin-progress-group-heading"><div><h3>{group.name}</h3><small>{group.dueAt ? `Prazo ${formatDate(group.dueAt)}` : "Sem prazo"}</small></div><b>{completed.length} de {people.length} pessoas</b></div>
+        <div className="admin-progress-group-heading"><div><h3>{group.name}</h3><small>{group.dueAt ? `Prazo ${formatDate(group.dueAt)}` : "Sem prazo"}</small></div><b>{completed.length} de {people.length} {plural(people.length, "pessoa", "pessoas")}</b></div>
         <div className="assignment-progress-track" role="progressbar" aria-label={`Conclusão da equipe no checklist ${group.name}`} aria-valuemin={0} aria-valuemax={people.length} aria-valuenow={completed.length}><span style={{ width: `${percent}%` }}/></div>
         <div className="admin-progress-group-footer">
           <span>{pending.length} {pending.length === 1 ? "pendente" : "pendentes"}{overdueCount ? ` · ${overdueCount} expirados` : ""}</span>
@@ -2330,7 +2251,7 @@ function AdminChecklistAssignmentForm({ data, user, execute }: { data: Workspace
   }
 
   return <section className="live-panel admin-checklist-assign">
-    <div className="live-panel-heading"><div><span className="eyebrow">NOVA ATRIBUIÇÃO</span><h2>Atribuir checklist à equipe</h2></div></div>
+    <div className="live-panel-heading"><div><h2>Atribuir checklist à equipe</h2></div></div>
     <p className="org-manager-help">Escolha um modelo e atribua-o aos líderes ou colaboradores ativos. Cada pessoa receberá sua própria cópia para preencher.</p>
     <form className="stack-form" onSubmit={assign}>
       <label>Modelo ativo<select required value={templateId} onChange={(event) => { setTemplateId(event.target.value); setDueAt(""); }}><option value="">Selecione um modelo</option>{templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}</select></label>
@@ -2382,7 +2303,7 @@ function AdminAssignmentsManager({ data, execute }: { data: WorkspaceData; execu
   const hasFilters = Boolean(term || statusFilter);
   const statusLabels: Record<"COMPLETED" | "OVERDUE" | "PENDING", string> = { COMPLETED: "Concluído", OVERDUE: "Expirado", PENDING: "Pendente" };
   return <section className="live-panel">
-    <div className="live-panel-heading"><div><span className="eyebrow">CANCELAMENTO</span><h2>Atribuições individuais</h2></div><span className="admin-progress-rate">{hasFilters ? `${filteredRows.length} de ${rows.length}` : `${rows.length} atribuição(ões)`}</span></div>
+    <div className="live-panel-heading"><div><span className="eyebrow">Cancelamento</span><h2>Atribuições individuais</h2></div><span className="admin-progress-rate">{hasFilters ? `${filteredRows.length} de ${rows.length}` : `${rows.length} ${plural(rows.length, "atribuição", "atribuições")}`}</span></div>
     <p className="subtle-note">Cancele uma atribuição para removê-la da pessoa, incluindo as tarefas já registradas. Útil para encerrar checklists publicados por engano.</p>
     <div className="filter-bar" role="search">
       <label className="filter-field filter-field-grow">Buscar<input type="search" className="filter-input" value={search} placeholder="Checklist ou pessoa" onChange={(event) => setSearch(event.target.value)}/></label>
@@ -2409,7 +2330,7 @@ function ChecklistAdmin({ data, user, execute }: { data: WorkspaceData; user: Us
   const visibleTemplates = data.templates.filter((item) => !templateTerm || item.name.toLocaleLowerCase("pt-BR").includes(templateTerm));
 
   return <>
-    <PageHeading eyebrow="VISÃO DA EMPRESA" title="Checklists" subtitle="Acompanhe as atribuições e veja quais checklists cada líder definiu para sua equipe."/>
+    <PageHeading title="Checklists" subtitle="Acompanhe as atribuições e veja quais checklists cada líder definiu para sua equipe."/>
     <AdminChecklistAssignmentForm data={data} user={user} execute={execute}/>
     <section className="live-panel">
       <AssignmentList data={data} user={user} execute={execute} admin/>
@@ -2417,7 +2338,7 @@ function ChecklistAdmin({ data, user, execute }: { data: WorkspaceData; user: Us
     <AdminAssignmentsManager data={data} execute={execute}/>
     <section className="live-panel checklist-models-panel">
       <div className="checklist-models-heading">
-        <span><span className="eyebrow">MODELOS DA EMPRESA</span><b>Checklists definidos pelos líderes</b></span>
+        <span><b>Checklists definidos pelos líderes</b></span>
         <span className="checklist-models-count">{templateTerm ? `${visibleTemplates.length} de ${data.templates.length}` : `${data.templates.length} ${data.templates.length === 1 ? "modelo" : "modelos"}`}</span>
       </div>
       <p className="subtle-note">Você pode editar, ativar, desativar ou excluir qualquer modelo da empresa.</p>
@@ -2526,7 +2447,7 @@ function ChecklistTemplateRow({
 
   return <div className="checklist-template-entry">
     <div className="checklist-template-summary">
-      <span><b>{template.name}</b><small>{departmentName}{templateTeamNames.length ? ` · ${templateTeamNames.join(", ")}` : ""} · {template.items.length} tarefas · {frequencyNames[template.frequency]}{template.scheduleEnabled ? ` · Publicação automática ${getScheduleLabel(template)}` : ""} · {responsibleNames[template.responsible]} · Criado por {createdByName}</small></span>
+      <span><b>{template.name}</b><small>{departmentName}{templateTeamNames.length ? ` · ${templateTeamNames.join(", ")}` : ""} · {template.items.length} {plural(template.items.length, "tarefa", "tarefas")} · {frequencyNames[template.frequency]}{template.scheduleEnabled ? ` · Publicação automática ${getScheduleLabel(template)}` : ""} · {responsibleNames[template.responsible]} · Criado por {createdByName}</small></span>
       <div className="checklist-template-actions">
         <span className={`status-chip ${template.active ? "done" : "pending"}`}>{template.active ? "Ativo" : "Inativo"}</span>
         <button type="button" className="button button-outline button-small" onClick={startEditing}>Editar</button>
@@ -2569,7 +2490,7 @@ function ChecklistTemplateRow({
         onDayOfMonthChange={setPublishDayOfMonth}
       />
       <div className="checklist-task-editor">
-        <div className="checklist-task-heading"><label>Tarefas</label><small>{items.filter((item) => item.trim()).length} adicionada(s)</small></div>
+        <div className="checklist-task-heading"><label>Tarefas</label><small>{items.filter((item) => item.trim()).length} {plural(items.filter((item) => item.trim()).length, "adicionada", "adicionadas")}</small></div>
         {items.map((item, index) => <div className="checklist-task-row" key={index}>
           <span>{index + 1}</span>
           <input aria-label={`Tarefa ${index + 1}`} required value={item} onChange={(event) => setItems((current) => current.map((value, itemIndex) => itemIndex === index ? event.target.value : value))}/>
@@ -2587,7 +2508,7 @@ function ChecklistTemplateRow({
 }
 
 function ChecklistAssignments({ data, user, execute }: { data: WorkspaceData; user: User; execute: (operation: () => Promise<unknown>, message: string) => Promise<boolean> }) {
-  return <><PageHeading eyebrow="ROTINA DA EQUIPE" title="Checklists" subtitle="Consulte tarefas e atualize seu progresso."/><section className="live-panel"><AssignmentList data={data} user={user} execute={execute}/></section></>;
+  return <><PageHeading title="Checklists" subtitle="Consulte tarefas e atualize seu progresso."/><section className="live-panel"><AssignmentList data={data} user={user} execute={execute}/></section></>;
 }
 
 function formatDate(date: string) {
@@ -2701,7 +2622,7 @@ function AssignmentList({ data, user, execute, admin = false }: { data: Workspac
     const completionRate = progress.length ? Math.round(completedCount / progress.length * 100) : 0;
     return <div className="admin-checklist-progress">
       <div className="live-panel-heading">
-        <div><span className="eyebrow">ACOMPANHAMENTO</span><h2>Panorama dos checklists</h2></div>
+        <div><h2>Panorama dos checklists</h2></div>
         <span className="admin-progress-rate">{completionRate}% das atribuições concluídas</span>
       </div>
       <div className="admin-progress-stats">
@@ -2710,7 +2631,7 @@ function AssignmentList({ data, user, execute, admin = false }: { data: Workspac
         <div><span>Pendentes</span><b>{pendingCount}</b><small>Ainda faltam preencher</small></div>
         <div className={overdueCount ? "has-overdue" : ""}><span>Expirados</span><b>{overdueCount}</b><small>Atribuições pendentes vencidas</small></div>
       </div>
-      {overdueCount > 0 && <p className="admin-progress-alert">{overdueCount} atribuição(ões) passaram do prazo. Confira as pendências abaixo.</p>}
+      {overdueCount > 0 && <p className="admin-progress-alert">{overdueCount} {plural(overdueCount, "atribuição passou", "atribuições passaram")} do prazo. Confira as pendências abaixo.</p>}
       {progress.length > 0 && pendingCount === 0 && <p className="admin-progress-success">Todos os checklists atribuídos foram preenchidos.</p>}
       {progress.length > 0
         ? <div className="admin-progress-groups">{groups.map((group) => {
@@ -2718,7 +2639,7 @@ function AssignmentList({ data, user, execute, admin = false }: { data: Workspac
           return <article className="admin-progress-group" key={group.key}>
             <div className="admin-progress-group-heading">
               <div><h3>{group.name}</h3><small>Criado por {group.creatorName} · {group.dueAt ? `Prazo ${formatDate(group.dueAt)}` : "Sem prazo"}</small></div>
-              <b>{group.completed} de {group.total} pessoas</b>
+              <b>{group.completed} de {group.total} {plural(group.total, "pessoa", "pessoas")}</b>
             </div>
             <div className="assignment-progress-track" role="progressbar" aria-label={`Conclusão do checklist ${group.name}`} aria-valuemin={0} aria-valuemax={group.total} aria-valuenow={group.completed}>
               <span style={{ width: `${percentage}%` }}/>
