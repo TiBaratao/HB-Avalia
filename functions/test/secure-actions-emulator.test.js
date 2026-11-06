@@ -149,20 +149,53 @@ test("customer QR feedback is isolated from internal evaluations and requires ac
   const company = db.collection("companies").doc(companyId);
   const otherCompanyId = `feedback-other-${randomUUID()}`;
   const otherCompany = db.collection("companies").doc(otherCompanyId);
+  const legacyToken = "legacy-feedback-token";
+  const legacyCashierToken = "legacy-cashier-feedback-token";
   await Promise.all([
     company.set({ name: "Mercado de teste" }),
     company.collection("members").doc("admin").set({ role: "ADMIN", status: "ACTIVE" }),
     company.collection("members").doc("employee").set({ role: "EMPLOYEE", status: "ACTIVE" }),
+    company.collection("customerFeedbackLocations").doc("legacy-general").set({
+      kind: "GENERAL",
+      name: "Supermercado",
+      active: true,
+      publicToken: legacyToken,
+    }),
+    db.collection("customerFeedbackQrTokens").doc(legacyToken).set({
+      companyId,
+      locationId: "legacy-general",
+      active: true,
+    }),
+    company.collection("customerFeedbackLocations").doc("legacy-cashier").set({
+      kind: "CASHIER",
+      name: "Caixa anterior",
+      active: true,
+      publicToken: legacyCashierToken,
+    }),
+    db.collection("customerFeedbackQrTokens").doc(legacyCashierToken).set({
+      companyId,
+      locationId: "legacy-cashier",
+      active: true,
+    }),
+    company.collection("customerFeedbackResponses").doc("legacy-response").set({
+      sourceLocationId: "legacy-general",
+      sourceLocationName: "Supermercado",
+      overallRating: 5,
+      cashierRating: null,
+      comment: "Avaliação histórica sem mercado.",
+      submittedAt: new Date(),
+    }),
     otherCompany.set({ name: "Outro mercado" }),
     otherCompany.collection("members").doc("other-admin").set({ role: "ADMIN", status: "ACTIVE" }),
   ]);
 
   const dashboard = await manageCustomerFeedback(db, "admin", { companyId, action: "list" });
-  const general = dashboard.locations.find((location) => location.kind === "GENERAL");
   const matriz = dashboard.locations.find((location) => location.kind === "MARKET" && location.marketId === "matriz");
   const summit = dashboard.locations.find((location) => location.kind === "MARKET" && location.marketId === "summit");
   assert.deepEqual(dashboard.locations.filter((location) => location.kind === "MARKET").map((location) => location.name).sort(), ["Loja 2", "Matriz", "Summit"]);
-  assert.ok(general?.publicToken);
+  assert.equal(dashboard.locations.some((location) => location.kind === "GENERAL"), false);
+  assert.equal(dashboard.locations.some((location) => location.marketId === null), false);
+  assert.equal(dashboard.recentResponses.some((response) => response.marketId === null), false);
   assert.ok(matriz?.publicToken);
   assert.ok(summit?.publicToken);
   assert.equal(dashboard.summary.averageRating, null);
@@ -179,9 +212,15 @@ test("customer QR feedback is isolated from internal evaluations and requires ac
   assert.equal(dashboardWithCashier.locations.find((location) => location.id === cashier.locationId).marketId, "matriz");
   assert.equal(dashboardWithCashier.locations.find((location) => location.id === cashier.locationId).cashierAverage, null);
 
-  const generalForm = await getPublicCustomerFeedbackForm(db, general.publicToken);
-  assert.equal(generalForm.companyName, "Mercado de teste");
-  assert.deepEqual(generalForm.cashiers, []);
+  await assert.rejects(getPublicCustomerFeedbackForm(db, legacyToken), (error) =>
+    error instanceof CustomerFeedbackError && error.code === "not-found");
+  await assert.rejects(submitCustomerFeedback(db, { token: legacyToken, overallRating: 5 }, "legacy-client"), (error) =>
+    error instanceof CustomerFeedbackError && error.code === "not-found");
+  await assert.rejects(getPublicCustomerFeedbackForm(db, legacyCashierToken), (error) =>
+    error instanceof CustomerFeedbackError && error.code === "not-found");
+  await assert.rejects(submitCustomerFeedback(db, { token: legacyCashierToken, overallRating: 5 }, "legacy-cashier-client"), (error) =>
+    error instanceof CustomerFeedbackError && error.code === "not-found");
+  assert.equal((await company.collection("customerFeedbackResponses").doc("legacy-response").get()).exists, true);
   const marketForm = await getPublicCustomerFeedbackForm(db, matriz.publicToken);
   assert.equal(marketForm.location.name, "Matriz");
   assert.equal(marketForm.location.marketName, "Matriz");
@@ -233,7 +272,7 @@ test("customer QR feedback is isolated from internal evaluations and requires ac
     cashierRating: 1,
   }, "another-client"), (error) => error instanceof CustomerFeedbackError && error.code === "invalid-argument");
 
-  assert.equal((await company.collection("customerFeedbackResponses").get()).size, 5);
+  assert.equal((await company.collection("customerFeedbackResponses").get()).size, 6);
   assert.equal((await company.collection("evaluations").get()).size, 0);
   const cashierSnapshot = await company.collection("customerFeedbackLocations").doc(cashier.locationId).get();
   assert.equal(cashierSnapshot.get("cashierRatingCount"), 5);
@@ -290,11 +329,11 @@ test("customer feedback applies an atomic per-client submission limit", async ()
   await company.set({ name: "Mercado com limite" });
   await company.collection("members").doc("admin").set({ role: "ADMIN", status: "ACTIVE" });
   const dashboard = await manageCustomerFeedback(db, "admin", { companyId, action: "list" });
-  const general = dashboard.locations.find((location) => location.kind === "GENERAL");
-  assert.ok(general?.publicToken);
+  const matriz = dashboard.locations.find((location) => location.kind === "MARKET" && location.marketId === "matriz");
+  assert.ok(matriz?.publicToken);
 
   const attempts = await Promise.allSettled(Array.from({ length: 11 }, () =>
-    submitCustomerFeedback(db, { token: general.publicToken, overallRating: 5 }, "limited-client")));
+    submitCustomerFeedback(db, { token: matriz.publicToken, overallRating: 5 }, "limited-client")));
   assert.equal(attempts.filter((attempt) => attempt.status === "fulfilled").length, 10);
   assert.equal(attempts.filter((attempt) => attempt.status === "rejected"
     && attempt.reason instanceof CustomerFeedbackError

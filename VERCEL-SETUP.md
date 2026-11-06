@@ -33,7 +33,7 @@ Server routes verify Firebase ID tokens and write with the Firebase Admin SDK. E
 ## Customer feedback by QR Code
 
 - The public form is served at `/avaliar/<token>` and does not require a Firebase account. The QR token is random and resolves to its company and location only on the server.
-- Active company admins manage separate QR Codes and feedback for Matriz, Loja 2, and Summit from the **Avaliação de Clientes** workspace tab. Cashier QR Codes are linked to a single market; older QR Codes without a market remain available as legacy records and their responses are not assigned retroactively.
+- Active company admins manage separate QR Codes and feedback for Matriz, Loja 2, and Summit from the **Avaliação de Clientes** workspace tab. Cashier QR Codes are linked to a single market. Older QR Codes without a market are retired and hidden; their historical responses remain stored but are not shown or assigned retroactively.
 - Customer feedback is stored in `customerFeedbackResponses` and its own summary/location collections. It is not written to `evaluations`, is not linked to employee accounts, and does not affect internal scoring or promotion evidence.
 - Overall comments are visible as soon as responses arrive. Overall averages are withheld until a market has at least five responses; cashier averages require at least five ratings for that cashier.
 - Public Firestore access remains denied. Public submissions go through the Node.js API, which validates ratings/comments, accepts only active QR/cashier locations, uses a honeypot, and atomically limits each client network identifier to 10 submissions per 10 minutes per company. The limiter stores an HMAC of the client address using a server-generated secret, never the address itself.

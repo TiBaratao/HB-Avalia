@@ -62,34 +62,6 @@ function makeQrToken() {
   return randomBytes(32).toString("base64url");
 }
 
-async function ensureGeneralLocation(db, companyId) {
-  const locationRef = locationCollection(db, companyId).doc("general");
-  const generatedToken = makeQrToken();
-  const tokenRef = qrTokenDocument(db, generatedToken);
-
-  await db.runTransaction(async (transaction) => {
-    const snapshot = await transaction.get(locationRef);
-    if (snapshot.exists) return;
-    transaction.create(locationRef, {
-      kind: "GENERAL",
-      name: "Supermercado",
-      active: true,
-      publicToken: generatedToken,
-      responseCount: 0,
-      overallRatingTotal: 0,
-      cashierRatingCount: 0,
-      cashierRatingTotal: 0,
-      createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-    transaction.create(tokenRef, { companyId, locationId: "general", active: true });
-  });
-
-  const snapshot = await locationRef.get();
-  if (!snapshot.exists) throw new CustomerFeedbackError("internal", "Não foi possível preparar o QR Code geral.");
-  return { id: snapshot.id, ...snapshot.data() };
-}
-
 async function ensureMarketLocations(db, companyId) {
   const locations = locationCollection(db, companyId);
   await Promise.all(CUSTOMER_FEEDBACK_MARKETS.map(async ({ id, name }) => {
@@ -134,6 +106,10 @@ async function getPublicCustomerFeedbackForm(db, rawToken) {
   }
 
   const location = locationSnapshot.data();
+  if (!["MARKET", "CASHIER"].includes(location.kind)
+    || !CUSTOMER_FEEDBACK_MARKETS.some(({ id }) => id === location.marketId)) {
+    throw new CustomerFeedbackError("not-found", "Este QR Code não está disponível.");
+  }
   const marketRef = location.marketId ? locationCollection(db, companyId).doc(`market-${location.marketId}`) : null;
   const marketSnapshot = location.kind === "MARKET" ? locationSnapshot : marketRef ? await marketRef.get() : null;
   const cashiers = location.kind === "MARKET"
@@ -211,6 +187,10 @@ async function submitCustomerFeedback(db, input, clientAddress) {
       throw new CustomerFeedbackError("not-found", "Este QR Code não está disponível.");
     }
     const source = sourceSnapshot.data();
+    if (!["MARKET", "CASHIER"].includes(source.kind)
+      || !CUSTOMER_FEEDBACK_MARKETS.some(({ id }) => id === source.marketId)) {
+      throw new CustomerFeedbackError("not-found", "Este QR Code não está disponível.");
+    }
     if (source.kind === "CASHIER" && cashierId && cashierId !== locationId) {
       throw new CustomerFeedbackError("invalid-argument", "O QR Code identifica outro caixa.");
     }
@@ -318,7 +298,6 @@ async function manageCustomerFeedback(db, uid, data) {
 
   const locations = locationCollection(db, companyId);
   if (action === "list") {
-    await ensureGeneralLocation(db, companyId);
     await ensureMarketLocations(db, companyId);
     const companyRef = db.collection("companies").doc(companyId);
     const [companySnapshot, locationSnapshot, summarySnapshot] = await Promise.all([
@@ -326,8 +305,13 @@ async function manageCustomerFeedback(db, uid, data) {
       locations.get(),
       companyRef.collection("customerFeedbackSummaries").doc("overall").get(),
     ]);
-    const locationById = new Map(locationSnapshot.docs.map((snapshot) => [snapshot.id, snapshot.data()]));
-    const locationList = locationSnapshot.docs.map((snapshot) => {
+    const activeMarketLocations = locationSnapshot.docs.filter((snapshot) => {
+      const location = snapshot.data();
+      return (location.kind === "MARKET" || location.kind === "CASHIER")
+        && CUSTOMER_FEEDBACK_MARKETS.some(({ id }) => id === location.marketId);
+    });
+    const locationById = new Map(activeMarketLocations.map((snapshot) => [snapshot.id, snapshot.data()]));
+    const locationList = activeMarketLocations.map((snapshot) => {
       const location = snapshot.data();
       const cashierRatingCount = Number(location.cashierRatingCount ?? 0);
       const responseCount = Number(location.responseCount ?? 0);
@@ -353,12 +337,7 @@ async function manageCustomerFeedback(db, uid, data) {
     const responseCollection = companyRef.collection("customerFeedbackResponses");
     const marketResponseSnapshots = await Promise.all(CUSTOMER_FEEDBACK_MARKETS.map(({ id }) =>
       responseCollection.where("marketId", "==", id).orderBy("submittedAt", "desc").limit(MAX_RECENT_RESPONSES).get()));
-    const legacyResponseSnapshot = await responseCollection.orderBy("submittedAt", "desc")
-      .limit(MAX_RECENT_RESPONSES).get();
-    const recentResponseSnapshots = [
-      ...marketResponseSnapshots.flatMap((snapshot) => snapshot.docs),
-      ...legacyResponseSnapshot.docs.filter((snapshot) => typeof snapshot.get("marketId") !== "string"),
-    ].sort((first, second) =>
+    const recentResponseSnapshots = marketResponseSnapshots.flatMap((snapshot) => snapshot.docs).sort((first, second) =>
       (second.get("submittedAt")?.toMillis?.() ?? 0) - (first.get("submittedAt")?.toMillis?.() ?? 0));
     const recentResponses = recentResponseSnapshots.map((snapshot) => ({
         id: snapshot.id,

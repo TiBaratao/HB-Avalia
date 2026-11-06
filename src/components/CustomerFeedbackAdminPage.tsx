@@ -69,8 +69,6 @@ export function CustomerFeedbackAdminPage({ companyId }: { companyId: string }) 
 
   const markets = useMemo(() => dashboard?.locations.filter((location) => location.kind === "MARKET") ?? [], [dashboard]);
   const cashiers = useMemo(() => dashboard?.locations.filter((location) => location.kind === "CASHIER") ?? [], [dashboard]);
-  const legacyGeneral = dashboard?.locations.find((location) => location.kind === "GENERAL");
-  const legacyCashiers = cashiers.filter((cashier) => !cashier.marketId);
   const selectedMarket = markets.find((market) => market.marketId === selectedMarketId) ?? markets[0];
   const selectedMarketResponses = dashboard?.recentResponses.filter((response) => response.marketId === selectedMarket?.marketId) ?? [];
 
@@ -151,33 +149,6 @@ export function CustomerFeedbackAdminPage({ companyId }: { companyId: string }) 
           </article>)}
         </div> : <p className="empty-inline">Ainda não há avaliações para {selectedMarket?.name ?? "este mercado"}.</p>}
       </section>
-      {legacyGeneral && <details className="live-panel customer-feedback-panel">
-        <summary>QR Code e avaliações anteriores sem mercado identificado</summary>
-        <p className="empty-inline">Este QR Code antigo continua ativo. As respostas enviadas por ele não podem ser atribuídas a uma das três lojas; substitua-o nos materiais impressos pelos novos QR Codes individuais.</p>
-        <FeedbackQrCard location={legacyGeneral} busy={busy} privacyThreshold={dashboard.privacyThreshold} onRotate={() => perform(
-          () => rotateCustomerFeedbackQr(companyId, legacyGeneral.id),
-          "O QR Code anterior foi renovado.",
-        )}/>
-        {legacyCashiers.length > 0 && <div className="customer-feedback-market-cashiers">
-          <h4>Caixas anteriores sem mercado associado</h4>
-          {legacyCashiers.map((cashier) => <CashierQrCard
-            key={cashier.id}
-            cashier={cashier}
-            busy={busy}
-            privacyThreshold={dashboard.privacyThreshold}
-            onRename={(name) => perform(() => renameCustomerFeedbackCashier(companyId, cashier.id, name), "Nome do caixa atualizado.")}
-            onToggle={() => perform(() => setCustomerFeedbackCashierActive(companyId, cashier.id, !cashier.active), cashier.active ? "Caixa desativado; seu QR Code não aceitará novas respostas." : "Caixa reativado.")}
-            onRotate={() => perform(() => rotateCustomerFeedbackQr(companyId, cashier.id), "QR Code do caixa renovado. Atualize o material impresso.")}
-          />)}
-        </div>}
-        <div className="customer-feedback-comments">
-          {dashboard.recentResponses.filter((response) => response.marketId === null).map((response) => <article className="customer-feedback-comment" key={response.id}>
-            <div className="customer-feedback-comment-heading"><span><b>{response.sourceLocationName}</b>{response.cashierName && <small> · Atendimento: {response.cashierName}</small>}</span><time>{response.submittedAt ? new Date(response.submittedAt).toLocaleString("pt-BR") : "Data indisponível"}</time></div>
-            <div className="customer-feedback-comment-ratings"><span>Supermercado <RatingDisplay rating={response.overallRating}/></span>{response.cashierRating !== null && <span>Caixa <RatingDisplay rating={response.cashierRating}/></span>}</div>
-            <p>{response.comment || "Nenhum comentário enviado."}</p>
-          </article>)}
-        </div>
-      </details>}
     </> : <section className="live-panel"><p>Os dados das avaliações de clientes não estão disponíveis.</p><button className="button button-outline" onClick={() => void refresh()}>Tentar novamente</button></section>}
   </>;
 }
