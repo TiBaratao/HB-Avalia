@@ -8,6 +8,11 @@ const RATE_LIMIT_MAX_SUBMISSIONS = 10;
 const MAX_ACTIVE_CASHIERS = 100;
 const MAX_RECENT_RESPONSES = 100;
 const MIN_RESPONSES_FOR_RESULTS = 5;
+const CUSTOMER_FEEDBACK_MARKETS = Object.freeze([
+  { id: "matriz", name: "Matriz" },
+  { id: "loja-2", name: "Loja 2" },
+  { id: "summit", name: "Summit" },
+]);
 
 class CustomerFeedbackError extends SecureActionError {
   constructor(code, message) {
@@ -85,6 +90,31 @@ async function ensureGeneralLocation(db, companyId) {
   return { id: snapshot.id, ...snapshot.data() };
 }
 
+async function ensureMarketLocations(db, companyId) {
+  const locations = locationCollection(db, companyId);
+  await Promise.all(CUSTOMER_FEEDBACK_MARKETS.map(async ({ id, name }) => {
+    const locationRef = locations.doc(`market-${id}`);
+    const generatedToken = makeQrToken();
+    const tokenRef = qrTokenDocument(db, generatedToken);
+    await db.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(locationRef);
+      if (snapshot.exists) return;
+      transaction.create(locationRef, {
+        kind: "MARKET",
+        marketId: id,
+        name,
+        active: true,
+        publicToken: generatedToken,
+        responseCount: 0,
+        overallRatingTotal: 0,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      transaction.create(tokenRef, { companyId, locationId: locationRef.id, active: true });
+    });
+  }));
+}
+
 async function getPublicCustomerFeedbackForm(db, rawToken) {
   const token = safeQrToken(rawToken);
   const tokenSnapshot = await qrTokenDocument(db, token).get();
@@ -104,13 +134,33 @@ async function getPublicCustomerFeedbackForm(db, rawToken) {
   }
 
   const location = locationSnapshot.data();
-  const cashiers = location.kind === "GENERAL"
-    ? (await locationCollection(db, companyId).where("kind", "==", "CASHIER").where("active", "==", true).limit(MAX_ACTIVE_CASHIERS).get())
-      .docs.map((snapshot) => ({ id: snapshot.id, name: snapshot.get("name") }))
-    : [];
+  const marketRef = location.marketId ? locationCollection(db, companyId).doc(`market-${location.marketId}`) : null;
+  const marketSnapshot = location.kind === "MARKET" ? locationSnapshot : marketRef ? await marketRef.get() : null;
+  const cashiers = location.kind === "MARKET"
+    ? (await locationCollection(db, companyId)
+      .where("kind", "==", "CASHIER")
+      .where("marketId", "==", location.marketId)
+      .where("active", "==", true)
+      .limit(MAX_ACTIVE_CASHIERS)
+      .get()).docs.map((snapshot) => ({ id: snapshot.id, name: snapshot.get("name") }))
+    : location.kind === "GENERAL"
+      ? (await locationCollection(db, companyId)
+        .where("kind", "==", "CASHIER")
+        .where("active", "==", true)
+        .limit(MAX_ACTIVE_CASHIERS)
+        .get()).docs
+        .filter((snapshot) => !snapshot.get("marketId"))
+        .map((snapshot) => ({ id: snapshot.id, name: snapshot.get("name") }))
+      : [];
   return {
     companyName: companySnapshot.get("name"),
-    location: { id: locationSnapshot.id, kind: location.kind, name: location.name },
+    location: {
+      id: locationSnapshot.id,
+      kind: location.kind,
+      name: location.name,
+      marketId: typeof location.marketId === "string" ? location.marketId : null,
+      marketName: marketSnapshot?.get("name") ?? null,
+    },
     cashiers,
   };
 }
@@ -165,6 +215,17 @@ async function submitCustomerFeedback(db, input, clientAddress) {
       throw new CustomerFeedbackError("invalid-argument", "O QR Code identifica outro caixa.");
     }
 
+    const marketId = source.kind === "MARKET"
+      ? source.marketId
+      : typeof source.marketId === "string" ? source.marketId : null;
+    const marketRef = marketId ? locationCollection(db, companyId).doc(`market-${marketId}`) : null;
+    const marketSnapshot = marketRef
+      ? source.kind === "MARKET" ? sourceSnapshot : await transaction.get(marketRef)
+      : null;
+    if (marketRef && (!marketSnapshot?.exists || marketSnapshot.get("kind") !== "MARKET" || marketSnapshot.get("active") !== true)) {
+      throw new CustomerFeedbackError("failed-precondition", "O mercado associado a este QR Code não está disponível.");
+    }
+
     let cashierSnapshot = null;
     let cashierRef = null;
     if (cashierId) {
@@ -172,6 +233,12 @@ async function submitCustomerFeedback(db, input, clientAddress) {
       cashierSnapshot = await transaction.get(cashierRef);
       if (!cashierSnapshot.exists || cashierSnapshot.get("kind") !== "CASHIER" || cashierSnapshot.get("active") !== true) {
         throw new CustomerFeedbackError("failed-precondition", "O caixa selecionado não está disponível.");
+      }
+      if (marketId && cashierSnapshot.get("marketId") !== marketId) {
+        throw new CustomerFeedbackError("invalid-argument", "O caixa selecionado pertence a outro mercado.");
+      }
+      if (!marketId && cashierSnapshot.get("marketId")) {
+        throw new CustomerFeedbackError("invalid-argument", "O caixa selecionado pertence a outro mercado.");
       }
     }
 
@@ -201,6 +268,8 @@ async function submitCustomerFeedback(db, input, clientAddress) {
     transaction.create(responseRef, {
       sourceLocationId: locationId,
       sourceLocationName: source.name,
+      marketId: marketId ?? null,
+      marketName: marketSnapshot?.get("name") ?? null,
       cashierId: cashierId || null,
       cashierName: cashierSnapshot?.get("name") ?? null,
       overallRating,
@@ -231,6 +300,13 @@ async function submitCustomerFeedback(db, input, clientAddress) {
       });
     }
     transaction.update(sourceLocationRef, sourceUpdate);
+    if (marketRef && marketRef.path !== sourceLocationRef.path) {
+      transaction.update(marketRef, {
+        responseCount: FieldValue.increment(1),
+        overallRatingTotal: FieldValue.increment(overallRating),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
     return { accepted: true };
   });
 }
@@ -243,22 +319,29 @@ async function manageCustomerFeedback(db, uid, data) {
   const locations = locationCollection(db, companyId);
   if (action === "list") {
     await ensureGeneralLocation(db, companyId);
+    await ensureMarketLocations(db, companyId);
     const companyRef = db.collection("companies").doc(companyId);
     const [companySnapshot, locationSnapshot, summarySnapshot] = await Promise.all([
       companyRef.get(),
       locations.get(),
       companyRef.collection("customerFeedbackSummaries").doc("overall").get(),
     ]);
+    const locationById = new Map(locationSnapshot.docs.map((snapshot) => [snapshot.id, snapshot.data()]));
     const locationList = locationSnapshot.docs.map((snapshot) => {
       const location = snapshot.data();
       const cashierRatingCount = Number(location.cashierRatingCount ?? 0);
+      const responseCount = Number(location.responseCount ?? 0);
       return {
         id: snapshot.id,
         kind: location.kind,
+        marketId: typeof location.marketId === "string" ? location.marketId : null,
         name: location.name,
         active: location.active,
         publicToken: location.publicToken,
-        responseCount: Number(location.responseCount ?? 0),
+        responseCount,
+        averageRating: location.kind === "MARKET" && responseCount >= MIN_RESPONSES_FOR_RESULTS
+          ? Number(location.overallRatingTotal ?? 0) / responseCount
+          : null,
         cashierRatingCount,
         cashierAverage: cashierRatingCount >= MIN_RESPONSES_FOR_RESULTS
           ? Number(location.cashierRatingTotal ?? 0) / cashierRatingCount
@@ -267,14 +350,22 @@ async function manageCustomerFeedback(db, uid, data) {
     });
     const summary = summarySnapshot.exists ? summarySnapshot.data() : { responseCount: 0, overallRatingTotal: 0 };
     const responseCount = Number(summary.responseCount ?? 0);
-    const responseSnapshot = await companyRef.collection("customerFeedbackResponses")
-      .orderBy("submittedAt", "desc").limit(MAX_RECENT_RESPONSES).get();
-    const recentResponses = responseSnapshot.docs
-      .slice(0, MAX_RECENT_RESPONSES)
-      .map((snapshot) => ({
+    const responseCollection = companyRef.collection("customerFeedbackResponses");
+    const marketResponseSnapshots = await Promise.all(CUSTOMER_FEEDBACK_MARKETS.map(({ id }) =>
+      responseCollection.where("marketId", "==", id).orderBy("submittedAt", "desc").limit(MAX_RECENT_RESPONSES).get()));
+    const legacyResponseSnapshot = await responseCollection.orderBy("submittedAt", "desc")
+      .limit(MAX_RECENT_RESPONSES).get();
+    const recentResponseSnapshots = [
+      ...marketResponseSnapshots.flatMap((snapshot) => snapshot.docs),
+      ...legacyResponseSnapshot.docs.filter((snapshot) => typeof snapshot.get("marketId") !== "string"),
+    ].sort((first, second) =>
+      (second.get("submittedAt")?.toMillis?.() ?? 0) - (first.get("submittedAt")?.toMillis?.() ?? 0));
+    const recentResponses = recentResponseSnapshots.map((snapshot) => ({
         id: snapshot.id,
         ...snapshot.data(),
         sourceLocationName: snapshot.get("sourceLocationName") || locationById.get(snapshot.get("sourceLocationId"))?.name || "Supermercado",
+        marketId: typeof snapshot.get("marketId") === "string" ? snapshot.get("marketId") : null,
+        marketName: typeof snapshot.get("marketName") === "string" ? snapshot.get("marketName") : null,
         submittedAt: snapshot.get("submittedAt")?.toDate?.().toISOString() ?? null,
       }));
     return {
@@ -289,25 +380,39 @@ async function manageCustomerFeedback(db, uid, data) {
       companyName: companySnapshot.get("name"),
       maxRecentResponses: MAX_RECENT_RESPONSES,
       privacyThreshold: MIN_RESPONSES_FOR_RESULTS,
+      markets: CUSTOMER_FEEDBACK_MARKETS,
     };
   }
 
   if (action === "createCashier") {
     const name = requireString(data.name, "Nome do caixa", 60);
+    const marketId = requireString(data.marketId, "Mercado", 40);
     if (name.length < 2) throw new CustomerFeedbackError("invalid-argument", "O nome do caixa deve ter pelo menos 2 caracteres.");
+    if (!CUSTOMER_FEEDBACK_MARKETS.some((market) => market.id === marketId)) {
+      throw new CustomerFeedbackError("invalid-argument", "Selecione um mercado válido para o caixa.");
+    }
     const locationRef = locations.doc();
     const token = makeQrToken();
     const tokenRef = qrTokenDocument(db, token);
     await db.runTransaction(async (transaction) => {
-      const currentLocations = await transaction.get(locations.where("kind", "==", "CASHIER"));
+      const marketRef = locations.doc(`market-${marketId}`);
+      const [currentLocations, marketSnapshot] = await Promise.all([
+        transaction.get(locations.where("kind", "==", "CASHIER")),
+        transaction.get(marketRef),
+      ]);
+      if (!marketSnapshot.exists || marketSnapshot.get("kind") !== "MARKET" || marketSnapshot.get("active") !== true) {
+        throw new CustomerFeedbackError("failed-precondition", "O mercado selecionado não está disponível.");
+      }
       if (currentLocations.docs.filter((snapshot) => snapshot.get("active") === true).length >= MAX_ACTIVE_CASHIERS) {
         throw new CustomerFeedbackError("resource-exhausted", `O limite é de ${MAX_ACTIVE_CASHIERS} caixas.`);
       }
-      if (currentLocations.docs.some((snapshot) => snapshot.get("name").trim().toLocaleLowerCase("pt-BR") === name.toLocaleLowerCase("pt-BR"))) {
+      if (currentLocations.docs.some((snapshot) => snapshot.get("marketId") === marketId
+        && snapshot.get("name").trim().toLocaleLowerCase("pt-BR") === name.toLocaleLowerCase("pt-BR"))) {
         throw new CustomerFeedbackError("already-exists", "Já existe um caixa com esse nome.");
       }
       transaction.create(locationRef, {
         kind: "CASHIER",
+        marketId,
         name,
         active: true,
         publicToken: token,
@@ -354,7 +459,9 @@ async function manageCustomerFeedback(db, uid, data) {
       if (!locationSnapshot.exists || locationSnapshot.get("kind") !== "CASHIER") {
         throw new CustomerFeedbackError("not-found", "Caixa não encontrado.");
       }
-      if (cashierSnapshots.docs.some((snapshot) => snapshot.id !== locationId && snapshot.get("name").trim().toLocaleLowerCase("pt-BR") === name.toLocaleLowerCase("pt-BR"))) {
+      if (cashierSnapshots.docs.some((snapshot) => snapshot.id !== locationId
+        && snapshot.get("marketId") === locationSnapshot.get("marketId")
+        && snapshot.get("name").trim().toLocaleLowerCase("pt-BR") === name.toLocaleLowerCase("pt-BR"))) {
         throw new CustomerFeedbackError("already-exists", "Já existe um caixa com esse nome.");
       }
       transaction.update(locationRef, { name, updatedAt: FieldValue.serverTimestamp() });
@@ -369,7 +476,7 @@ async function manageCustomerFeedback(db, uid, data) {
     const newTokenRef = qrTokenDocument(db, token);
     await db.runTransaction(async (transaction) => {
       const locationSnapshot = await transaction.get(locationRef);
-      if (!locationSnapshot.exists || !["GENERAL", "CASHIER"].includes(locationSnapshot.get("kind"))) {
+      if (!locationSnapshot.exists || !["GENERAL", "MARKET", "CASHIER"].includes(locationSnapshot.get("kind"))) {
         throw new CustomerFeedbackError("not-found", "Local não encontrado.");
       }
       const oldTokenRef = qrTokenDocument(db, locationSnapshot.get("publicToken"));

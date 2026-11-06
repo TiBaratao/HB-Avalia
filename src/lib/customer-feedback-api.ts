@@ -2,11 +2,13 @@ import { getFirebaseAuth } from "./firebase/client";
 
 export interface CustomerFeedbackLocation {
   id: string;
-  kind: "GENERAL" | "CASHIER";
+  kind: "MARKET" | "GENERAL" | "CASHIER";
+  marketId: string | null;
   name: string;
   active: boolean;
   publicToken: string;
   responseCount: number;
+  averageRating: number | null;
   cashierRatingCount: number;
   cashierAverage: number | null;
 }
@@ -15,6 +17,8 @@ export interface CustomerFeedbackResponse {
   id: string;
   sourceLocationId: string;
   sourceLocationName: string;
+  marketId: string | null;
+  marketName: string | null;
   cashierId: string | null;
   cashierName: string | null;
   overallRating: number;
@@ -34,12 +38,16 @@ export interface CustomerFeedbackDashboard {
 
 export interface PublicCustomerFeedbackForm {
   companyName: string;
-  location: { id: string; kind: "GENERAL" | "CASHIER"; name: string };
+  location: { id: string; kind: "MARKET" | "GENERAL" | "CASHIER"; name: string; marketId: string | null; marketName: string | null };
   cashiers: Array<{ id: string; name: string }>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isCustomerFeedbackLocationKind(value: unknown): value is CustomerFeedbackLocation["kind"] {
+  return value === "MARKET" || value === "GENERAL" || value === "CASHIER";
 }
 
 async function readJson(response: Response): Promise<Record<string, unknown>> {
@@ -71,7 +79,7 @@ async function adminRequest(companyId: string, action: string, details: Record<s
 function parseLocation(value: unknown): CustomerFeedbackLocation {
   if (!isRecord(value)
     || typeof value.id !== "string"
-    || (value.kind !== "GENERAL" && value.kind !== "CASHIER")
+    || !isCustomerFeedbackLocationKind(value.kind)
     || typeof value.name !== "string"
     || typeof value.active !== "boolean"
     || typeof value.publicToken !== "string") {
@@ -81,10 +89,14 @@ function parseLocation(value: unknown): CustomerFeedbackLocation {
   return {
     id: value.id,
     kind: value.kind,
+    marketId: typeof value.marketId === "string" ? value.marketId : null,
     name: value.name,
     active: value.active,
     publicToken: value.publicToken,
     responseCount: numberField(value.responseCount),
+    averageRating: typeof value.averageRating === "number" && Number.isFinite(value.averageRating)
+      ? value.averageRating
+      : null,
     cashierRatingCount: numberField(value.cashierRatingCount),
     cashierAverage: typeof value.cashierAverage === "number" && Number.isFinite(value.cashierAverage)
       ? value.cashierAverage
@@ -105,6 +117,8 @@ function parseResponse(value: unknown): CustomerFeedbackResponse {
     id: value.id,
     sourceLocationId: value.sourceLocationId,
     sourceLocationName: value.sourceLocationName,
+    marketId: typeof value.marketId === "string" ? value.marketId : null,
+    marketName: typeof value.marketName === "string" ? value.marketName : null,
     cashierId: typeof value.cashierId === "string" ? value.cashierId : null,
     cashierName: typeof value.cashierName === "string" ? value.cashierName : null,
     overallRating: value.overallRating,
@@ -135,8 +149,8 @@ export async function loadCustomerFeedbackDashboard(companyId: string): Promise<
   };
 }
 
-export async function createCustomerFeedbackCashier(companyId: string, name: string) {
-  const payload = await adminRequest(companyId, "createCashier", { name });
+export async function createCustomerFeedbackCashier(companyId: string, marketId: string, name: string) {
+  const payload = await adminRequest(companyId, "createCashier", { marketId, name });
   if (typeof payload.locationId !== "string" || typeof payload.token !== "string") {
     throw new Error("O servidor não retornou o QR Code do caixa.");
   }
@@ -164,7 +178,7 @@ export async function loadPublicCustomerFeedbackForm(token: string): Promise<Pub
     || !isRecord(payload.location)
     || typeof payload.location.id !== "string"
     || typeof payload.location.name !== "string"
-    || (payload.location.kind !== "GENERAL" && payload.location.kind !== "CASHIER")
+    || !isCustomerFeedbackLocationKind(payload.location.kind)
     || !Array.isArray(payload.cashiers)) {
     throw new Error("Este QR Code não contém uma página de avaliação válida.");
   }
@@ -176,7 +190,13 @@ export async function loadPublicCustomerFeedbackForm(token: string): Promise<Pub
   });
   return {
     companyName: payload.companyName,
-    location: { id: payload.location.id, name: payload.location.name, kind: payload.location.kind },
+    location: {
+      id: payload.location.id,
+      name: payload.location.name,
+      kind: payload.location.kind,
+      marketId: typeof payload.location.marketId === "string" ? payload.location.marketId : null,
+      marketName: typeof payload.location.marketName === "string" ? payload.location.marketName : null,
+    },
     cashiers,
   };
 }

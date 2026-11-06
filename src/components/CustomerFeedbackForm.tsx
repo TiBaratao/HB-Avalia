@@ -47,7 +47,7 @@ export function CustomerFeedbackForm({ token }: { token: string }) {
       return;
     }
     if (evaluateCashier && (!cashierId || !cashierRating)) {
-      setError(form?.location.kind === "GENERAL"
+      setError(form?.location.kind === "MARKET" || form?.location.kind === "GENERAL"
         ? "Selecione o caixa e dê uma nota para o atendimento."
         : "Dê uma nota para o atendimento do caixa.");
       return;
@@ -79,7 +79,9 @@ export function CustomerFeedbackForm({ token }: { token: string }) {
             : form && <>
               <span className="customer-feedback-eyebrow">SUA OPINIÃO IMPORTA</span>
               <h1>Avalie sua experiência</h1>
-              <p className="customer-feedback-intro">{form.companyName}{form.location.kind === "CASHIER" ? ` · ${form.location.name}` : ""}</p>
+              <p className="customer-feedback-intro">{form.companyName}{form.location.marketName
+                ? ` · ${form.location.marketName}`
+                : form.location.kind === "CASHIER" ? ` · ${form.location.name}` : ""}</p>
               <form className="customer-feedback-form" onSubmit={(event) => void handleSubmit(event)} noValidate>
                 <fieldset className="customer-feedback-question">
                   <legend>Como foi sua experiência no supermercado?</legend>
@@ -94,7 +96,7 @@ export function CustomerFeedbackForm({ token }: { token: string }) {
                     </label>
                     : <p className="customer-feedback-no-cashiers">O atendimento do caixa poderá ser avaliado quando houver caixas cadastrados.</p>}
                   {evaluateCashier && <div className="customer-feedback-cashier-fields">
-                    {form.location.kind === "GENERAL" && <label>Qual caixa atendeu você?
+                    {(form.location.kind === "MARKET" || form.location.kind === "GENERAL") && <label>Qual caixa atendeu você?
                       <select value={cashierId} onChange={(event) => setCashierId(event.target.value)} required>
                         <option value="">Selecione o caixa</option>
                         {form.cashiers.map((cashier) => <option key={cashier.id} value={cashier.id}>{cashier.name}</option>)}

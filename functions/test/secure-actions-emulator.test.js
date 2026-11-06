@@ -157,32 +157,49 @@ test("customer QR feedback is isolated from internal evaluations and requires ac
     otherCompany.collection("members").doc("other-admin").set({ role: "ADMIN", status: "ACTIVE" }),
   ]);
 
+  const dashboard = await manageCustomerFeedback(db, "admin", { companyId, action: "list" });
+  const general = dashboard.locations.find((location) => location.kind === "GENERAL");
+  const matriz = dashboard.locations.find((location) => location.kind === "MARKET" && location.marketId === "matriz");
+  const summit = dashboard.locations.find((location) => location.kind === "MARKET" && location.marketId === "summit");
+  assert.deepEqual(dashboard.locations.filter((location) => location.kind === "MARKET").map((location) => location.name).sort(), ["Loja 2", "Matriz", "Summit"]);
+  assert.ok(general?.publicToken);
+  assert.ok(matriz?.publicToken);
+  assert.ok(summit?.publicToken);
+  assert.equal(dashboard.summary.averageRating, null);
+  assert.deepEqual(dashboard.recentResponses, []);
   const cashier = await manageCustomerFeedback(db, "admin", {
     companyId,
     action: "createCashier",
+    marketId: "matriz",
     name: "Caixa 01",
   });
-  const dashboard = await manageCustomerFeedback(db, "admin", { companyId, action: "list" });
-  const general = dashboard.locations.find((location) => location.kind === "GENERAL");
-  assert.ok(general?.publicToken);
-  assert.equal(dashboard.summary.averageRating, null);
-  assert.deepEqual(dashboard.recentResponses, []);
-  assert.equal(dashboard.locations.find((location) => location.id === cashier.locationId).cashierAverage, null);
+  const dashboardWithCashier = await manageCustomerFeedback(db, "admin", { companyId, action: "list" });
+  const matrizWithCashier = dashboardWithCashier.locations.find((location) => location.kind === "MARKET" && location.marketId === "matriz");
+  assert.ok(matrizWithCashier?.publicToken);
+  assert.equal(dashboardWithCashier.locations.find((location) => location.id === cashier.locationId).marketId, "matriz");
+  assert.equal(dashboardWithCashier.locations.find((location) => location.id === cashier.locationId).cashierAverage, null);
 
   const generalForm = await getPublicCustomerFeedbackForm(db, general.publicToken);
   assert.equal(generalForm.companyName, "Mercado de teste");
-  assert.deepEqual(generalForm.cashiers, [{ id: cashier.locationId, name: "Caixa 01" }]);
+  assert.deepEqual(generalForm.cashiers, []);
+  const marketForm = await getPublicCustomerFeedbackForm(db, matriz.publicToken);
+  assert.equal(marketForm.location.name, "Matriz");
+  assert.equal(marketForm.location.marketName, "Matriz");
+  assert.deepEqual(marketForm.cashiers, [{ id: cashier.locationId, name: "Caixa 01" }]);
   const cashierForm = await getPublicCustomerFeedbackForm(db, cashier.token);
   assert.equal(cashierForm.location.kind, "CASHIER");
   assert.equal(cashierForm.location.name, "Caixa 01");
+  assert.equal(cashierForm.location.marketName, "Matriz");
+  await manageCustomerFeedback(db, "other-admin", { companyId: otherCompanyId, action: "list" });
   const otherCashier = await manageCustomerFeedback(db, "other-admin", {
     companyId: otherCompanyId,
     action: "createCashier",
+    marketId: "matriz",
     name: "Caixa 01",
   });
 
   await submitCustomerFeedback(db, {
-    token: general.publicToken,
+    token: matriz.publicToken,
     overallRating: 5,
     cashierId: cashier.locationId,
     cashierRating: 4,
@@ -192,16 +209,19 @@ test("customer QR feedback is isolated from internal evaluations and requires ac
   assert.equal(dashboardBeforeThreshold.summary.responseCount, 1);
   assert.equal(dashboardBeforeThreshold.summary.averageRating, null);
   assert.ok(dashboardBeforeThreshold.recentResponses.some((response) => response.comment === "Atendimento muito bom."));
+  assert.equal(dashboardBeforeThreshold.locations.find((location) => location.kind === "MARKET" && location.marketId === "matriz").responseCount, 1);
+  assert.equal(dashboardBeforeThreshold.locations.find((location) => location.kind === "MARKET" && location.marketId === "matriz").averageRating, null);
+  assert.equal(dashboardBeforeThreshold.locations.find((location) => location.kind === "MARKET" && location.marketId === "summit").responseCount, 0);
   for (let index = 0; index < 4; index += 1) {
     await submitCustomerFeedback(db, {
-      token: general.publicToken,
+      token: matriz.publicToken,
       overallRating: 4,
       cashierId: cashier.locationId,
       cashierRating: 4,
     }, `test-client-${index}`);
   }
   await assert.rejects(submitCustomerFeedback(db, {
-    token: general.publicToken,
+    token: matriz.publicToken,
     overallRating: 4,
     cashierId: otherCashier.locationId,
     cashierRating: 2,
@@ -221,22 +241,37 @@ test("customer QR feedback is isolated from internal evaluations and requires ac
   const adminDashboard = await manageCustomerFeedback(db, "admin", { companyId, action: "list" });
   assert.equal(adminDashboard.summary.responseCount, 5);
   assert.equal(adminDashboard.summary.averageRating, 4.2);
+  assert.equal(adminDashboard.locations.find((location) => location.kind === "MARKET" && location.marketId === "matriz").averageRating, 4.2);
   assert.ok(adminDashboard.recentResponses.some((response) => response.comment === "Atendimento muito bom."));
+
+  const summitResponse = await submitCustomerFeedback(db, {
+    token: summit.publicToken,
+    overallRating: 2,
+    comment: "Avaliação exclusiva da Summit.",
+  }, "summit-client");
+  assert.equal(summitResponse.accepted, true);
+  const dashboardAfterSummitResponse = await manageCustomerFeedback(db, "admin", { companyId, action: "list" });
+  assert.equal(dashboardAfterSummitResponse.locations.find((location) => location.kind === "MARKET" && location.marketId === "matriz").responseCount, 5);
+  assert.equal(dashboardAfterSummitResponse.locations.find((location) => location.kind === "MARKET" && location.marketId === "summit").responseCount, 1);
+  assert.equal(dashboardAfterSummitResponse.locations.find((location) => location.kind === "MARKET" && location.marketId === "summit").averageRating, null);
+  assert.ok(dashboardAfterSummitResponse.recentResponses.some((response) =>
+    response.marketId === "summit" && response.comment === "Avaliação exclusiva da Summit."));
 
   const secondCashier = await manageCustomerFeedback(db, "admin", {
     companyId,
     action: "createCashier",
+    marketId: "matriz",
     name: "Caixa 02",
   });
   await submitCustomerFeedback(db, {
-    token: general.publicToken,
+    token: matriz.publicToken,
     overallRating: 1,
     cashierId: secondCashier.locationId,
     cashierRating: 1,
     comment: "Comentário de um grupo pequeno.",
   }, "small-cashier-cohort");
   const dashboardWithSmallCashierCohort = await manageCustomerFeedback(db, "admin", { companyId, action: "list" });
-  assert.equal(dashboardWithSmallCashierCohort.summary.responseCount, 6);
+  assert.equal(dashboardWithSmallCashierCohort.summary.responseCount, 7);
   assert.equal(dashboardWithSmallCashierCohort.locations.find((location) => location.id === secondCashier.locationId).cashierAverage, null);
   assert.ok(dashboardWithSmallCashierCohort.recentResponses.some((response) => response.comment === "Comentário de um grupo pequeno."));
 

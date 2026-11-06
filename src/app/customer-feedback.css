@@ -151,6 +151,7 @@
 .customer-feedback-comment-label textarea,
 .customer-feedback-qr-copy input,
 .customer-feedback-cashier-form input,
+.customer-feedback-cashier-form select,
 .customer-feedback-rename-form input {
   width: 100%;
   min-height: 42px;
@@ -361,6 +362,89 @@
   margin-bottom: 16px;
 }
 
+.customer-feedback-market-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.customer-feedback-market {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.customer-feedback-market > .live-panel-heading {
+  margin: 0;
+}
+
+.customer-feedback-market > .live-panel-heading h3,
+.customer-feedback-market-cashiers h4 {
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.customer-feedback-market > .live-panel-heading h3 {
+  font-size: 17px;
+}
+
+.customer-feedback-market > .live-panel-heading p {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.customer-feedback-market .customer-feedback-qr-card {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.customer-feedback-market .customer-feedback-qr-card > svg,
+.customer-feedback-market .customer-feedback-qr-unavailable {
+  align-self: center;
+}
+
+.customer-feedback-market-cashiers {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.customer-feedback-market-cashiers > h4 {
+  font-size: 14px;
+}
+
+.customer-feedback-market-cashiers > .customer-feedback-cashier {
+  padding: 10px;
+}
+
+.customer-feedback-market-grid + .customer-feedback-market-grid {
+  margin-top: 12px;
+}
+
+.customer-feedback-panel > .live-panel-heading > label {
+  display: grid;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.customer-feedback-panel > .live-panel-heading select {
+  min-height: 38px;
+  padding: 7px 10px;
+  border: 1px solid var(--control-border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--control-text);
+  font: 400 14px var(--sans);
+}
+
 .customer-feedback-cashier-form label,
 .customer-feedback-rename-form label {
   min-width: 0;
@@ -489,6 +573,10 @@
   .customer-feedback-qr-card {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .customer-feedback-market-grid {
+    grid-template-columns: 1fr;
   }
 
   .customer-feedback-qr-card > svg,

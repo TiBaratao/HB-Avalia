@@ -21,6 +21,8 @@ export function CustomerFeedbackAdminPage({ companyId }: { companyId: string }) 
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [cashierName, setCashierName] = useState("");
+  const [cashierMarketId, setCashierMarketId] = useState("matriz");
+  const [selectedMarketId, setSelectedMarketId] = useState("matriz");
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -60,14 +62,17 @@ export function CustomerFeedbackAdminPage({ companyId }: { companyId: string }) 
       setError("Informe o nome do caixa com pelo menos 2 caracteres.");
       return;
     }
-    if (await perform(() => createCustomerFeedbackCashier(companyId, name), "Caixa e QR Code cadastrados.")) {
+    if (await perform(() => createCustomerFeedbackCashier(companyId, cashierMarketId, name), "Caixa e QR Code cadastrados.")) {
       setCashierName("");
     }
   };
 
-  const overallAverage = dashboard?.summary.averageRating ?? null;
+  const markets = useMemo(() => dashboard?.locations.filter((location) => location.kind === "MARKET") ?? [], [dashboard]);
   const cashiers = useMemo(() => dashboard?.locations.filter((location) => location.kind === "CASHIER") ?? [], [dashboard]);
-  const generalLocation = dashboard?.locations.find((location) => location.kind === "GENERAL");
+  const legacyGeneral = dashboard?.locations.find((location) => location.kind === "GENERAL");
+  const legacyCashiers = cashiers.filter((cashier) => !cashier.marketId);
+  const selectedMarket = markets.find((market) => market.marketId === selectedMarketId) ?? markets[0];
+  const selectedMarketResponses = dashboard?.recentResponses.filter((response) => response.marketId === selectedMarket?.marketId) ?? [];
 
   return <>
     <header className="live-page-heading">
@@ -77,50 +82,65 @@ export function CustomerFeedbackAdminPage({ companyId }: { companyId: string }) 
     {error && <div className="live-notice error" role="alert">{error}</div>}
     {notice && <div className="live-notice success" role="status">{notice}</div>}
     {loading && !dashboard ? <section className="live-panel"><p>Carregando avaliações de clientes…</p></section> : dashboard ? <>
-      <dl className="overview-summary overview-summary-3 customer-feedback-summary" aria-label="Resumo das avaliações de clientes">
-        <div><dt>Avaliações recebidas</dt><dd>{dashboard.summary.responseCount}</dd></div>
-        <div><dt>Média do supermercado</dt><dd>{overallAverage === null ? "—" : overallAverage.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 2 })}<small>{overallAverage === null ? `Disponível após ${dashboard.privacyThreshold} respostas` : "/ 5"}</small></dd></div>
-        <div><dt>Caixas cadastrados</dt><dd>{cashiers.length}</dd></div>
+      <dl className="overview-summary overview-summary-3 customer-feedback-summary" aria-label="Avaliações por mercado">
+        {markets.map((market) => <div key={market.id}>
+          <dt>{market.name}</dt>
+          <dd>{market.responseCount}<small>{market.averageRating === null
+            ? ` avaliações · média após ${dashboard.privacyThreshold}`
+            : ` avaliações · média ${market.averageRating.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 2 })}/5`}</small></dd>
+        </div>)}
       </dl>
 
       <section className="live-panel customer-feedback-panel">
-        <div className="live-panel-heading">
-          <div><h2>QR Code geral do supermercado</h2><p>Para colocar em mesas, entrada ou outros pontos da loja.</p></div>
+        <div className="live-panel-heading"><div><h2>QR Codes por mercado</h2><p>Cada loja tem seu próprio QR Code, avaliações, comentários e média.</p></div></div>
+        <div className="customer-feedback-market-grid">
+          {markets.map((market) => <article className="customer-feedback-market" key={market.id}>
+            <div className="live-panel-heading">
+              <div><h3>{market.name}</h3><p>{market.responseCount} avaliações recebidas · Média {market.averageRating === null
+                ? `disponível após ${dashboard.privacyThreshold} respostas`
+                : `${market.averageRating.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 2 })}/5`}</p></div>
+            </div>
+            <FeedbackQrCard location={market} busy={busy} privacyThreshold={dashboard.privacyThreshold} onRotate={() => perform(
+              () => rotateCustomerFeedbackQr(companyId, market.id),
+              `O QR Code da ${market.name} foi renovado. Atualize os materiais impressos.`,
+            )}/>
+            <div className="customer-feedback-market-cashiers">
+              <h4>Caixas desta loja</h4>
+              {cashiers.filter((cashier) => cashier.marketId === market.marketId).map((cashier) => <CashierQrCard
+                key={cashier.id}
+                cashier={cashier}
+                busy={busy}
+                privacyThreshold={dashboard.privacyThreshold}
+                onRename={(name) => perform(() => renameCustomerFeedbackCashier(companyId, cashier.id, name), "Nome do caixa atualizado.")}
+                onToggle={() => perform(() => setCustomerFeedbackCashierActive(companyId, cashier.id, !cashier.active), cashier.active ? "Caixa desativado; seu QR Code não aceitará novas respostas." : "Caixa reativado.")}
+                onRotate={() => perform(() => rotateCustomerFeedbackQr(companyId, cashier.id), "QR Code do caixa renovado. Atualize o material impresso.")}
+              />)}
+              {!cashiers.some((cashier) => cashier.marketId === market.marketId) && <p className="empty-inline">Nenhum caixa cadastrado para esta loja.</p>}
+            </div>
+          </article>)}
         </div>
-        {generalLocation && <FeedbackQrCard location={generalLocation} busy={busy} privacyThreshold={dashboard.privacyThreshold} onRotate={() => perform(
-          () => rotateCustomerFeedbackQr(companyId, generalLocation.id),
-          "O QR Code geral foi renovado. Atualize os materiais impressos.",
-        )}/>}
       </section>
 
       <section className="live-panel customer-feedback-panel">
         <div className="live-panel-heading">
-          <div><h2>QR Codes por caixa</h2><p>Cadastre o nome usado para identificar o caixa. Isso não cria nem altera uma conta de colaborador.</p></div>
+          <div><h2>Cadastrar caixa</h2><p>Vincule cada caixa a uma loja. Isso não cria nem altera uma conta de colaborador.</p></div>
         </div>
         <form className="customer-feedback-cashier-form" onSubmit={(event) => void submitCashier(event)}>
+          <label>Mercado<select value={cashierMarketId} onChange={(event) => setCashierMarketId(event.target.value)} required>{markets.map((market) => <option key={market.id} value={market.marketId ?? ""}>{market.name}</option>)}</select></label>
           <label>Nome do caixa<input value={cashierName} maxLength={60} onChange={(event) => setCashierName(event.target.value)} placeholder="Ex.: Caixa 01" required/></label>
-          <button type="submit" className="button button-primary" disabled={busy}><Plus size={16}/> Adicionar caixa</button>
+          <button type="submit" className="button button-primary" disabled={busy || !markets.length}><Plus size={16}/> Adicionar caixa</button>
         </form>
-        <div className="customer-feedback-cashiers">
-          {cashiers.map((cashier) => <CashierQrCard
-            key={cashier.id}
-            cashier={cashier}
-            busy={busy}
-            privacyThreshold={dashboard.privacyThreshold}
-            onRename={(name) => perform(() => renameCustomerFeedbackCashier(companyId, cashier.id, name), "Nome do caixa atualizado.")}
-            onToggle={() => perform(() => setCustomerFeedbackCashierActive(companyId, cashier.id, !cashier.active), cashier.active ? "Caixa desativado; seu QR Code não aceitará novas respostas." : "Caixa reativado.")}
-            onRotate={() => perform(() => rotateCustomerFeedbackQr(companyId, cashier.id), "QR Code do caixa renovado. Atualize o material impresso.")}
-          />)}
-          {!cashiers.length && <p className="empty-inline">Cadastre caixas para criar QR Codes específicos e consultar a avaliação do atendimento.</p>}
-        </div>
       </section>
 
       <section className="live-panel customer-feedback-panel">
-        <div className="live-panel-heading"><div><h2>Comentários recentes</h2><p>Os comentários aparecem assim que são enviados. As médias são liberadas após {dashboard.privacyThreshold} respostas. Exibindo até {dashboard.maxRecentResponses} avaliações recentes.</p></div></div>
-        {dashboard.recentResponses.length ? <div className="customer-feedback-comments">
-          {dashboard.recentResponses.map((response) => <article className="customer-feedback-comment" key={response.id}>
+        <div className="live-panel-heading">
+          <div><h2>Comentários recentes por mercado</h2><p>Exibindo até {dashboard.maxRecentResponses} avaliações recentes da loja selecionada.</p></div>
+          <label>Mercado<select value={selectedMarket?.marketId ?? ""} onChange={(event) => setSelectedMarketId(event.target.value)}>{markets.map((market) => <option key={market.id} value={market.marketId ?? ""}>{market.name}</option>)}</select></label>
+        </div>
+        {selectedMarketResponses.length ? <div className="customer-feedback-comments">
+          {selectedMarketResponses.map((response) => <article className="customer-feedback-comment" key={response.id}>
             <div className="customer-feedback-comment-heading">
-              <span><b>{response.sourceLocationName}</b>{response.cashierName && <small> · Atendimento: {response.cashierName}</small>}</span>
+              <span><b>{response.marketName ?? selectedMarket?.name ?? response.sourceLocationName}</b>{response.cashierName && <small> · Atendimento: {response.cashierName}</small>}</span>
               <time dateTime={response.submittedAt ?? undefined}>{response.submittedAt ? new Date(response.submittedAt).toLocaleString("pt-BR") : "Data indisponível"}</time>
             </div>
             <div className="customer-feedback-comment-ratings">
@@ -129,8 +149,35 @@ export function CustomerFeedbackAdminPage({ companyId }: { companyId: string }) 
             </div>
             <p>{response.comment || "Nenhum comentário enviado."}</p>
           </article>)}
-        </div> : <p className="empty-inline">Ainda não há avaliações de clientes.</p>}
+        </div> : <p className="empty-inline">Ainda não há avaliações para {selectedMarket?.name ?? "este mercado"}.</p>}
       </section>
+      {legacyGeneral && <details className="live-panel customer-feedback-panel">
+        <summary>QR Code e avaliações anteriores sem mercado identificado</summary>
+        <p className="empty-inline">Este QR Code antigo continua ativo. As respostas enviadas por ele não podem ser atribuídas a uma das três lojas; substitua-o nos materiais impressos pelos novos QR Codes individuais.</p>
+        <FeedbackQrCard location={legacyGeneral} busy={busy} privacyThreshold={dashboard.privacyThreshold} onRotate={() => perform(
+          () => rotateCustomerFeedbackQr(companyId, legacyGeneral.id),
+          "O QR Code anterior foi renovado.",
+        )}/>
+        {legacyCashiers.length > 0 && <div className="customer-feedback-market-cashiers">
+          <h4>Caixas anteriores sem mercado associado</h4>
+          {legacyCashiers.map((cashier) => <CashierQrCard
+            key={cashier.id}
+            cashier={cashier}
+            busy={busy}
+            privacyThreshold={dashboard.privacyThreshold}
+            onRename={(name) => perform(() => renameCustomerFeedbackCashier(companyId, cashier.id, name), "Nome do caixa atualizado.")}
+            onToggle={() => perform(() => setCustomerFeedbackCashierActive(companyId, cashier.id, !cashier.active), cashier.active ? "Caixa desativado; seu QR Code não aceitará novas respostas." : "Caixa reativado.")}
+            onRotate={() => perform(() => rotateCustomerFeedbackQr(companyId, cashier.id), "QR Code do caixa renovado. Atualize o material impresso.")}
+          />)}
+        </div>}
+        <div className="customer-feedback-comments">
+          {dashboard.recentResponses.filter((response) => response.marketId === null).map((response) => <article className="customer-feedback-comment" key={response.id}>
+            <div className="customer-feedback-comment-heading"><span><b>{response.sourceLocationName}</b>{response.cashierName && <small> · Atendimento: {response.cashierName}</small>}</span><time>{response.submittedAt ? new Date(response.submittedAt).toLocaleString("pt-BR") : "Data indisponível"}</time></div>
+            <div className="customer-feedback-comment-ratings"><span>Supermercado <RatingDisplay rating={response.overallRating}/></span>{response.cashierRating !== null && <span>Caixa <RatingDisplay rating={response.cashierRating}/></span>}</div>
+            <p>{response.comment || "Nenhum comentário enviado."}</p>
+          </article>)}
+        </div>
+      </details>}
     </> : <section className="live-panel"><p>Os dados das avaliações de clientes não estão disponíveis.</p><button className="button button-outline" onClick={() => void refresh()}>Tentar novamente</button></section>}
   </>;
 }

@@ -33,9 +33,9 @@ Server routes verify Firebase ID tokens and write with the Firebase Admin SDK. E
 ## Customer feedback by QR Code
 
 - The public form is served at `/avaliar/<token>` and does not require a Firebase account. The QR token is random and resolves to its company and location only on the server.
-- Active company admins manage the general supermarket QR, cashier QR Codes, ratings, and recent comments from the **Avaliação de Clientes** workspace tab.
+- Active company admins manage separate QR Codes and feedback for Matriz, Loja 2, and Summit from the **Avaliação de Clientes** workspace tab. Cashier QR Codes are linked to a single market; older QR Codes without a market remain available as legacy records and their responses are not assigned retroactively.
 - Customer feedback is stored in `customerFeedbackResponses` and its own summary/location collections. It is not written to `evaluations`, is not linked to employee accounts, and does not affect internal scoring or promotion evidence.
-- To preserve anonymity, overall averages and comments are withheld until at least five responses exist; cashier averages and cashier-associated comments require at least five ratings for that cashier. Counts remain visible, matching the existing minimum-response approach for surveys.
+- Overall comments are visible as soon as responses arrive. Overall averages are withheld until a market has at least five responses; cashier averages require at least five ratings for that cashier.
 - Public Firestore access remains denied. Public submissions go through the Node.js API, which validates ratings/comments, accepts only active QR/cashier locations, uses a honeypot, and atomically limits each client network identifier to 10 submissions per 10 minutes per company. The limiter stores an HMAC of the client address using a server-generated secret, never the address itself.
 - `expiresAt` on the rate-limit records uses Firestore TTL. Verify the TTL field override for `customerFeedbackRateLimits` is active in project `hb-avalia2`; TTL cleanup is asynchronous. Do not remove the Admin SDK service-account secret from Vercel.
 - Rotating a QR immediately invalidates its previous URL. Reprint any physical material after rotation. Deactivating a cashier QR rejects new submissions but preserves its history.
