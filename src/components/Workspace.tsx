@@ -27,6 +27,7 @@ import {
   Target,
   UserCircle,
   XCircle,
+  ArrowsClockwise,
   CaretDown,
   CalendarBlank,
   ChartBar,
@@ -34,10 +35,12 @@ import {
   ChatCircleText,
   GearSix,
   House,
+  List,
   SlidersHorizontal,
   SignOut,
   Star,
   Trophy,
+  TrendUp,
   UsersThree,
 } from "@phosphor-icons/react";
 import ConfigTabs from "./ui/config-tabs";
@@ -134,6 +137,47 @@ export function Workspace({ user, companyId, onSignOut }: { user: User; companyI
   const [notice, setNotice] = useState<Notice>(null);
   const [section, setSection] = useState<Section>("overview");
   const [selectedMemberId, setSelectedMemberId] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const drawerRef = useRef<HTMLElement>(null);
+  const closeMenu = useCallback(() => {
+    setMenuOpen(false);
+    if (window.matchMedia("(max-width: 900px)").matches) {
+      menuButtonRef.current?.focus();
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeMenu();
+        return;
+      }
+      if (event.key === "Tab") {
+        const focusableElements = drawerRef.current?.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        );
+        if (!focusableElements?.length) return;
+        const firstElement = focusableElements[0];
+        const lastElement = focusableElements[focusableElements.length - 1];
+        if (event.shiftKey && document.activeElement === firstElement) {
+          event.preventDefault();
+          lastElement.focus();
+        } else if (!event.shiftKey && document.activeElement === lastElement) {
+          event.preventDefault();
+          firstElement.focus();
+        }
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    document.body.classList.add("menu-open");
+    drawerRef.current?.querySelector<HTMLElement>("nav button")?.focus();
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.classList.remove("menu-open");
+    };
+  }, [closeMenu, menuOpen]);
 
   const refresh = useCallback(async (quiet = false) => {
     if (quiet) setRefreshing(true);
@@ -219,31 +263,44 @@ export function Workspace({ user, companyId, onSignOut }: { user: User; companyI
                 ? role === "ADMIN" ? <PromotionRequestsPage data={data} execute={execute}/> : <Overview data={data} user={user} execute={execute} onNavigate={setSection} />
                 : <CompanyPage data={data} execute={execute} />;
 
+  const dailyIds: Section[] = ["overview", "evaluations", "surveys", "checklists"];
+  const navGroups = [
+    { label: "Dia a dia", items: nav.filter((item) => dailyIds.includes(item.id)) },
+    { label: role === "EMPLOYEE" ? "Meu desenvolvimento" : "Gestão", items: nav.filter((item) => !dailyIds.includes(item.id)) },
+  ].filter((group) => group.items.length > 0);
+  const currentLabel = nav.find((item) => item.id === section)?.label ?? data.company.name;
+
   return (
-    <div className="live-app">
-      <aside className="live-sidebar">
-        <div className="live-company"><CompanyLogo className="company-logo-sidebar"/><span><b>{data.company.name}</b><small>{roleNames[role]}</small></span></div>
-        <p className="live-nav-label">MENU</p>
-        <nav className="live-nav" aria-label="Navegação principal">
-          {nav.map((item) => {
-            const pendingCount = item.id === "evaluations" ? pendingEvaluationCount : item.id === "checklists" ? pendingChecklistCount : 0;
-            return <button key={item.id} type="button" aria-current={section === item.id ? "page" : undefined} className={section === item.id ? "active" : ""} onClick={() => { setSection(item.id); setSelectedMemberId(""); setNotice(null); }}><span aria-hidden="true">{sectionIcons[item.id]}</span>{item.label}{pendingCount > 0 && <span className="live-nav-badge" aria-label={`${pendingCount} pendente${pendingCount === 1 ? "" : "s"}`}>{pendingCount}</span>}</button>;
-          })}
+    <div className="live-app shell">
+      {menuOpen && <button type="button" className="shell-overlay" aria-label="Fechar menu" onClick={closeMenu}/>}
+      <aside className={`shell-sidebar${menuOpen ? " is-open" : ""}`} id="shell-sidebar" ref={drawerRef} aria-label="Menu">
+        <div className="shell-company"><CompanyLogo className="company-logo-sidebar"/><span><b>{data.company.name}</b><small>{roleNames[role]}</small></span></div>
+        <nav className="shell-nav" aria-label="Navegação principal">
+          {navGroups.map((group) => <div className="shell-nav-group" key={group.label}>
+            <p className="shell-nav-label">{group.label}</p>
+            {group.items.map((item) => {
+              const pendingCount = item.id === "evaluations" ? pendingEvaluationCount : item.id === "checklists" ? pendingChecklistCount : 0;
+              return <button key={item.id} type="button" aria-current={section === item.id ? "page" : undefined} className="shell-nav-item" onClick={() => { setSection(item.id); setSelectedMemberId(""); setNotice(null); closeMenu(); }}><span className="shell-nav-icon" aria-hidden="true">{sectionIcons[item.id]}</span><span className="shell-nav-text">{item.label}</span>{pendingCount > 0 && <span className="shell-nav-badge" aria-label={`${pendingCount} pendente${pendingCount === 1 ? "" : "s"}`}>{pendingCount}</span>}</button>;
+            })}
+          </div>)}
         </nav>
-        <div className="live-sidebar-bottom">
-          <div className="live-account">
+        <div className="shell-account">
+          <div className="shell-account-info">
             <span className="live-avatar" aria-hidden="true">{initials(data.member.name)}</span>
-            <span className="live-account-details">
-              <b>{data.member.name}</b>
-              <small>{user.email}</small>
-              <small className="live-account-role">{data.company.name} · {roleNames[role]}</small>
-            </span>
+            <span><b>{data.member.name}</b><small>{user.email}</small></span>
           </div>
-          <button className="auth-link signout-button" onClick={onSignOut}>Sair da conta</button>
+          <div className="shell-account-actions">
+            <ThemeToggle/>
+            <button type="button" className="button button-outline button-small" onClick={onSignOut}><SignOut size={15} weight="regular" aria-hidden="true"/> Sair</button>
+          </div>
         </div>
       </aside>
-      <main className="live-main">
-        <header className="live-topbar"><div><span className="live-status-dot"/> Conectado</div><div className="live-topbar-actions"><ThemeToggle/><button type="button" className="button button-outline button-small topbar-signout" aria-label="Sair da conta" title="Sair da conta" onClick={onSignOut}><SignOut size={15} weight="regular"/><span>Sair</span></button><button type="button" className="button button-outline button-small" onClick={() => void refresh(true)} disabled={refreshing}>{refreshing ? "Atualizando…" : "Atualizar"}</button></div></header>
+      <main className="shell-main">
+        <header className="shell-topbar">
+          <button type="button" ref={menuButtonRef} className="shell-menu-button" aria-label="Abrir menu" aria-expanded={menuOpen} aria-controls="shell-sidebar" onClick={() => setMenuOpen(true)}><List size={22} aria-hidden="true"/></button>
+          <span className="shell-topbar-title">{currentLabel}</span>
+          <button type="button" className="button button-outline button-small shell-refresh" onClick={() => void refresh(true)} disabled={refreshing}><ArrowsClockwise size={15} aria-hidden="true"/><span>{refreshing ? "Atualizando…" : "Atualizar"}</span></button>
+        </header>
         <div className="live-content">
           {notice && <div className={`live-notice ${notice.kind}`} role="status">{notice.text}</div>}
           {loadError && <div className="live-notice error" role="alert">{loadError}</div>}
@@ -257,7 +314,7 @@ export function Workspace({ user, companyId, onSignOut }: { user: User; companyI
 const sectionIcons: Record<Section, ReactNode> = {
   overview: <House size={18} weight="regular"/>,
   development: <Target size={18} weight="regular"/>,
-  promotions: <Trophy size={18} weight="regular"/> ,
+  promotions: <TrendUp size={18} weight="regular"/>,
   team: <UsersThree size={18} weight="regular"/>,
   evaluations: <ChartBar size={18} weight="regular"/>,
   ranking: <Trophy size={18} weight="regular"/>,
@@ -717,7 +774,7 @@ function DevelopmentProfilePage({ data, employee, execute, onBack }: { data: Wor
       {!pendingRequest && canManagePdi && !careerProgress.nextPosition && <p className="development-inline-note">{careerProgress.isFinalPosition
         ? "Este colaborador já chegou ao último cargo configurado na sequência."
         : "O cargo atual não está na sequência de carreira. Peça à administração para atualizá-lo antes de iniciar um novo PDI."}</p>}
-      {!pendingRequest && !canManagePdi && !isAdmin && isOwner && <p className="development-inline-note">A avaliação não está disponível enquanto os dados de Promoção/PDI não puderem ser carregados.</p>}
+      {!pendingRequest && !canManagePdi && isOwner && <p className="development-inline-note">A avaliação não está disponível enquanto os dados de Promoção/PDI não puderem ser carregados.</p>}
       {isAdmin && <p className="development-inline-note">A administração pode consultar o histórico aqui. O preenchimento do PDI é feito pela liderança da equipe.</p>}
     </section>
   </>;

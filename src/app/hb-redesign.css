@@ -1,11 +1,11 @@
 /* ==========================================================================
    HB Avalia · camada visual (redesign)
    --------------------------------------------------------------------------
-   Este arquivo reúne tokens e ajustes visuais/componentes do redesign.
-   Alguns componentes também definem layout e estados de foco; regras de
-   negócio permanecem nos componentes e serviços.
-   Deve ser importado POR ÚLTIMO em layout.tsx, depois de filters.css.
-   Para desfazer o redesign: remova o import.
+   Reúne tokens visuais e estilos de layout/acessibilidade dos componentes
+   novos do redesign. Não altera regras de negócio nem contratos de dados.
+   Deve ficar depois de filters.css em layout.tsx; customer-feedback.css pode
+   vir depois para manter seus estilos específicos.
+   Para desfazer o redesign: remova o import e reverta as classes shell-*.
    ========================================================================== */
 
 @import url("https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..700&family=Figtree:wght@400..700&display=swap");
@@ -987,6 +987,273 @@ body,
 
 :root:not([data-theme="dark"]) .configuration-navigation {
   background: var(--surface);
+}
+
+/* ==========================================================================
+   Casco do app: menu lateral agrupado, barra superior enxuta e menu em gaveta no celular
+   (classes novas: shell-*, usadas no Workspace.tsx; as regras antigas live-sidebar,
+   live-nav, live-topbar etc. deixam de ser usadas)
+   ========================================================================== */
+.shell {
+  min-height: 100vh;
+  background: var(--canvas);
+  color: var(--text-primary);
+}
+
+.shell-sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 256px;
+  padding: 16px 12px 12px;
+  overflow-y: auto;
+  border-right: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.shell-company {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+}
+
+.shell-company > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.shell-company b,
+.shell-account-info b {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shell-company small,
+.shell-account-info small {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shell-nav {
+  display: grid;
+  gap: 18px;
+  margin-top: 10px;
+}
+
+.shell-nav-group {
+  display: grid;
+  gap: 2px;
+}
+
+.shell-nav-label {
+  margin: 0 10px 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.shell-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 550;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shell-nav-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  color: var(--text-muted);
+}
+
+.shell-nav-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.shell-nav-item:hover { background: var(--surface-soft); }
+
+.shell-nav-item[aria-current="page"] {
+  background: var(--brand-blue-light);
+  box-shadow: inset 3px 0 0 var(--brand-orange);
+  color: var(--brand-blue-dark);
+  font-weight: 650;
+}
+
+.shell-nav-item[aria-current="page"] .shell-nav-icon { color: var(--brand-blue); }
+
+.shell-nav-item:focus-visible,
+.shell-menu-button:focus-visible {
+  outline: 3px solid var(--brand-blue);
+  outline-offset: -3px;
+}
+
+.shell-nav-badge {
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--brand-orange-light);
+  color: var(--brand-orange-dark);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.shell-account {
+  display: grid;
+  gap: 10px;
+  margin-top: auto;
+  padding: 12px 4px 0;
+  border-top: 1px solid var(--line);
+}
+
+.shell-account-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.shell-account-info > span:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.shell-account-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.shell-account-actions .button {
+  flex: 1;
+  justify-content: center;
+  min-height: 40px;
+}
+
+.shell-main {
+  min-height: 100vh;
+  margin-left: 256px;
+}
+
+.shell-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  height: 56px;
+  padding: 0 32px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.shell-menu-button,
+.shell-topbar-title,
+.shell-overlay {
+  display: none;
+}
+
+.shell-refresh {
+  gap: 6px;
+  min-height: 40px;
+}
+
+@media (max-width: 900px) {
+  .shell-sidebar {
+    width: min(86vw, 320px);
+    visibility: hidden;
+    transform: translateX(-100%);
+    transition: transform 200ms ease, visibility 0s linear 200ms;
+  }
+
+  .shell-sidebar.is-open {
+    visibility: visible;
+    transform: none;
+    transition: transform 200ms ease;
+  }
+
+  .shell-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 15;
+    display: block;
+    border: 0;
+    background: rgb(15 23 29 / 55%);
+    cursor: pointer;
+  }
+
+  .shell-main { margin-left: 0; }
+
+  .shell-topbar {
+    justify-content: space-between;
+    padding: 0 12px;
+  }
+
+  .shell-menu-button {
+    display: grid;
+    flex: none;
+    width: 44px;
+    height: 44px;
+    place-items: center;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text-primary);
+    cursor: pointer;
+  }
+
+  .shell-topbar-title {
+    display: block;
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    font: 650 16px/1.2 var(--display);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  body.menu-open { overflow: hidden; }
+}
+
+@media (max-width: 480px) {
+  .shell-refresh span { display: none; }
+  .shell-refresh { width: 44px; min-height: 44px; justify-content: center; padding: 0; }
+}
+
+.shell-account-actions .theme-toggle span { display: inline; }
+
+/* Casco: textos pequenos com contraste de leitura */
+:root:not([data-theme="dark"]) :is(.shell-account-actions, .shell-topbar) .button span {
+  color: var(--text-secondary);
+}
+
+:root[data-theme="dark"] .shell-nav-badge {
+  color: #f2c76b;
 }
 
 /* ==========================================================================
