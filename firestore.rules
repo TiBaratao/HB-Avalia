@@ -10,12 +10,14 @@ service cloud.firestore {
       return /databases/$(database)/documents/companies/$(companyId)/members/$(uid);
     }
 
-    function companyPath(companyId) {
-      return /databases/$(database)/documents/companies/$(companyId);
+    function userProfilePath(uid) {
+      return /databases/$(database)/documents/userProfiles/$(uid);
     }
 
     function isCompanyMember(companyId) {
       return signedIn()
+        && exists(userProfilePath(request.auth.uid))
+        && get(userProfilePath(request.auth.uid)).data.companyId == companyId
         && exists(memberPath(companyId, request.auth.uid))
         && get(memberPath(companyId, request.auth.uid)).data.status == 'ACTIVE';
     }
@@ -58,14 +60,6 @@ service cloud.firestore {
       return cycle.status == 'OPEN'
         && (!('startsAtAt' in cycle) || cycle.startsAtAt <= request.time)
         && (!('endsAtAt' in cycle) || cycle.endsAtAt >= request.time);
-    }
-
-    function surveyIsAvailable(companyId, surveyId) {
-      let survey = get(/databases/$(database)/documents/companies/$(companyId)/surveys/$(surveyId)).data;
-      return survey.active == true
-        && survey.startsAtAt <= request.time
-        && survey.endsAtAt >= request.time
-        && survey.audience.hasAny([memberRole(companyId)]);
     }
 
     function validSurveyCreate() {
@@ -152,43 +146,6 @@ service cloud.firestore {
         && data.items == template.items;
     }
 
-    function validBootstrapAdmin(companyId, userId) {
-      let data = request.resource.data;
-      let company = getAfter(companyPath(companyId)).data;
-      return signedIn()
-        && userId == request.auth.uid
-        && request.auth.token.email is string
-        && data.keys().hasOnly(['uid', 'name', 'email', 'role', 'status', 'teamIds', 'positionTitle', 'createdAt'])
-        && data.uid == request.auth.uid
-        && data.email == request.auth.token.email
-        && data.role == 'ADMIN'
-        && data.status == 'ACTIVE'
-        && data.teamIds == []
-        && data.positionTitle == 'Atendente de Açougue Junior'
-        && existsAfter(companyPath(companyId))
-        && company.ownerUid == request.auth.uid;
-    }
-
-    function validSelfEnrollment(companyId, userId) {
-      let data = request.resource.data;
-      let company = get(companyPath(companyId)).data;
-      return signedIn()
-        && userId == request.auth.uid
-        && request.auth.token.email is string
-        && exists(companyPath(companyId))
-        && company.selfEnrollmentEnabled == true
-        && data.keys().hasOnly(['uid', 'name', 'email', 'role', 'status', 'teamIds', 'positionTitle', 'createdAt'])
-        && data.uid == request.auth.uid
-        && data.name is string
-        && data.name.size() >= 2
-        && data.email == request.auth.token.email
-        && company.defaultMemberRole == 'EMPLOYEE'
-        && data.role == 'EMPLOYEE'
-        && data.status == 'ACTIVE'
-        && data.teamIds == []
-        && data.positionTitle == 'Atendente de Açougue Junior';
-    }
-
     function validEvaluationCreate(companyId, evaluationId) {
       let data = request.resource.data;
       return signedIn()
@@ -232,43 +189,26 @@ service cloud.firestore {
     match /userProfiles/{userId} {
       allow get: if signedIn() && request.auth.uid == userId;
       allow list: if false;
-      allow create: if signedIn()
-        && request.auth.uid == userId
-        && request.resource.data.keys().hasOnly(['companyId', 'createdAt'])
-        && request.resource.data.companyId is string
-        && existsAfter(memberPath(request.resource.data.companyId, userId))
-        && getAfter(memberPath(request.resource.data.companyId, userId)).data.uid == userId
-        && getAfter(memberPath(request.resource.data.companyId, userId)).data.email == request.auth.token.email
-        && getAfter(memberPath(request.resource.data.companyId, userId)).data.status == 'ACTIVE';
-      allow update, delete: if false;
+      allow create, update, delete: if false;
     }
 
     match /companies/{companyId} {
       allow get: if isCompanyMember(companyId);
       allow list, delete: if false;
-      allow create: if signedIn()
-        && request.resource.data.keys().hasOnly(['name', 'ownerUid', 'selfEnrollmentEnabled', 'defaultMemberRole', 'createdAt'])
-        && request.resource.data.name is string
-        && request.resource.data.name.size() >= 2
-        && request.resource.data.name.size() <= 100
-        && request.resource.data.ownerUid == request.auth.uid
-        && request.resource.data.selfEnrollmentEnabled == true
-        && request.resource.data.defaultMemberRole == 'EMPLOYEE';
+      allow create: if false;
       allow update: if isAdmin(companyId)
         && request.resource.data.ownerUid == resource.data.ownerUid
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'updatedAt', 'teamRosterVersion', 'teamRosterSyncedAt']);
 
       match /members/{userId} {
         allow get: if isAdmin(companyId)
-          || (signedIn() && request.auth.uid == userId)
+          || (isCompanyMember(companyId) && request.auth.uid == userId)
           || (isLeader(companyId) && resource.data.role == 'EMPLOYEE' && sharesTeamWithIds(companyId, resource.data.teamIds))
           || (isEmployee(companyId) && resource.data.role == 'LEADER' && sharesTeamWithIds(companyId, resource.data.teamIds));
         allow list: if isAdmin(companyId)
           || (isLeader(companyId) && resource.data.role == 'EMPLOYEE' && sharesTeamWithIds(companyId, resource.data.teamIds))
           || (isEmployee(companyId) && resource.data.role == 'LEADER' && sharesTeamWithIds(companyId, resource.data.teamIds));
-        allow create: if isAdmin(companyId)
-          || validBootstrapAdmin(companyId, userId)
-          || validSelfEnrollment(companyId, userId);
+        allow create: if false;
         allow update: if isAdmin(companyId)
           && request.resource.data.uid == resource.data.uid
           && request.resource.data.email == resource.data.email
@@ -321,7 +261,7 @@ service cloud.firestore {
         allow delete: if isAdmin(companyId);
 
         match /participants/{userId} {
-          allow get: if signedIn() && request.auth.uid == userId;
+          allow get: if isCompanyMember(companyId) && request.auth.uid == userId;
           allow list: if isAdmin(companyId);
           allow create: if false;
           allow update: if false;
@@ -357,12 +297,12 @@ service cloud.firestore {
 
       match /checklistAssignments/{assignmentId} {
         allow read: if isAdmin(companyId)
-          || (signedIn() && resource.data.assignedToId == request.auth.uid)
+          || (isCompanyMember(companyId) && resource.data.assignedToId == request.auth.uid)
           || (isLeader(companyId) && sharesTeam(companyId, resource.data.assignedToId));
         allow create: if isAdmin(companyId) || validLeaderChecklistAssignment(companyId);
         allow delete: if isAdmin(companyId);
         allow update: if isAdmin(companyId)
-          || (signedIn()
+          || (isCompanyMember(companyId)
             && resource.data.assignedToId == request.auth.uid
             && request.resource.data.status in ['PENDING', 'COMPLETED']
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']));
@@ -373,7 +313,7 @@ service cloud.firestore {
           }
 
           allow read: if isAdmin(companyId)
-            || (signedIn() && assignment().assignedToId == request.auth.uid)
+            || (isCompanyMember(companyId) && assignment().assignedToId == request.auth.uid)
             || (isLeader(companyId) && sharesTeam(companyId, assignment().assignedToId));
           allow create: if isAdmin(companyId)
             || (isLeader(companyId)
@@ -381,12 +321,12 @@ service cloud.firestore {
               && sharesTeam(companyId, assignment().assignedToId)
               && request.resource.data.keys().hasOnly(['status', 'observation', 'completedAt'])
               && request.resource.data.status == 'PENDING')
-            || (signedIn()
+            || (isCompanyMember(companyId)
               && assignment().assignedToId == request.auth.uid
               && request.resource.data.keys().hasOnly(['status', 'observation', 'completedAt'])
               && request.resource.data.status in ['PENDING', 'COMPLETED']);
           allow update: if isAdmin(companyId)
-            || (signedIn()
+            || (isCompanyMember(companyId)
               && assignment().assignedToId == request.auth.uid
               && request.resource.data.keys().hasOnly(['status', 'observation', 'completedAt'])
               && request.resource.data.status in ['PENDING', 'COMPLETED']);

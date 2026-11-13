@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { resetPassword, signIn, signUp } from "../lib/firebase/auth";
+import { resetPassword, signIn } from "../lib/firebase/auth";
 import { CompanyLogo } from "./CompanyLogo";
 import { ThemeToggle } from "./ThemeProvider";
 
@@ -16,8 +16,6 @@ function authMessage(error: unknown) {
 }
 
 export function AuthPanel() {
-  const [mode, setMode] = useState<"login" | "register">("login");
-  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -30,20 +28,9 @@ export function AuthPanel() {
     setMessage("");
     setError("");
     try {
-      if (mode === "login") {
-        await signIn(email, password);
-      } else {
-        await signUp(email, password, name);
-        window.location.reload();
-      }
+      await signIn(email, password);
     } catch (reason) {
-      const code = typeof reason === "object" && reason && "code" in reason ? String(reason.code) : "";
-      if (mode === "register" && code.includes("email-already-in-use")) {
-        setMode("login");
-        setError(`A conta ${email.trim()} já existe. Entre com sua senha ou use “Esqueci minha senha”.`);
-      } else {
-        setError(authMessage(reason));
-      }
+      setError(authMessage(reason));
     } finally {
       setBusy(false);
     }
@@ -72,32 +59,24 @@ export function AuthPanel() {
           <CompanyLogo className="auth-company-logo"/>
           <span><b>HB Avalia</b><small>Desempenho e liderança</small></span>
         </div>
-        <h1>{mode === "login" ? "Entre na sua conta" : "Crie seu acesso"}</h1>
+        <h1>Entre na sua conta</h1>
         <p className="auth-intro">Avaliações e rotinas da sua equipe, em um só lugar.</p>
 
-        <div className="auth-tabs" role="tablist" aria-label="Acesso">
-          <button type="button" role="tab" aria-selected={mode === "login"} className={mode === "login" ? "selected" : ""} onClick={() => { setMode("login"); setError(""); setMessage(""); }}>Entrar</button>
-          <button type="button" role="tab" aria-selected={mode === "register"} className={mode === "register" ? "selected" : ""} onClick={() => { setMode("register"); setError(""); setMessage(""); }}>Criar conta</button>
-        </div>
-
         <form className="auth-form" onSubmit={submit}>
-          {mode === "register" && <label>Seu nome
-            <input type="text" autoComplete="name" minLength={2} required value={name} onChange={(event) => setName(event.target.value)} placeholder="Nome e sobrenome" />
-          </label>}
           <label>E-mail
             <input type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="voce@empresa.com" />
           </label>
           <label>Senha
-            <input type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={6} required value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Mínimo de 6 caracteres" />
+            <input type="password" autoComplete="current-password" minLength={6} required value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Sua senha" />
           </label>
           {error && <p className="form-alert error" role="alert">{error}</p>}
           {message && <p className="form-alert success" role="status">{message}</p>}
           <button className="button button-primary auth-submit" type="submit" disabled={busy}>
-            {busy ? "Aguarde…" : mode === "login" ? "Entrar" : "Continuar"}
+            {busy ? "Aguarde…" : "Entrar"}
           </button>
         </form>
-        {mode === "login" && <button className="auth-link" type="button" onClick={forgotPassword} disabled={busy}>Esqueci minha senha</button>}
-        <p className="auth-footnote">{mode === "register" ? "Depois de criar a conta, você entrará na empresa configurada para este sistema como colaborador." : "O acesso aos dados depende do seu perfil na empresa."}</p>
+        <button className="auth-link" type="button" onClick={forgotPassword} disabled={busy}>Esqueci minha senha</button>
+        <p className="auth-footnote">O acesso ao painel é somente por convite da administração. Se você recebeu um convite, abra o link para criar ou acessar sua conta.</p>
       </section>
     </main>
   );

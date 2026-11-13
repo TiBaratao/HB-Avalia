@@ -7,6 +7,7 @@ import "./brand-palette.css";
 import "./filters.css";
 import "./hb-redesign.css";
 import "./customer-feedback.css";
+import "./invitations.css";
 import { ThemeProvider } from "../components/ThemeProvider";
 import Script from "next/script";
 

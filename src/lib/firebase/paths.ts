@@ -7,6 +7,15 @@ export const companyDocument = (companyId: string) =>
 export const userProfileDocument = (uid: string) =>
   doc(getFirebaseDb(), "userProfiles", uid);
 
+export const organizationDocument = (organizationId: string) =>
+  doc(getFirebaseDb(), "organizations", organizationId);
+
+export const organizationStores = (organizationId: string) =>
+  collection(getFirebaseDb(), "organizations", organizationId, "stores");
+
+export const organizationStoreDocument = (organizationId: string, storeId: string) =>
+  doc(getFirebaseDb(), "organizations", organizationId, "stores", storeId);
+
 export const memberDocument = (companyId: string, uid: string) =>
   doc(getFirebaseDb(), "companies", companyId, "members", uid);
 

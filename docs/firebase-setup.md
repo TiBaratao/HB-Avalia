@@ -8,9 +8,9 @@
 - Firestore: `(default)` em `southamerica-east1` (São Paulo)
 - Firebase Authentication: provedor E-mail/Senha habilitado
 - Regras e índices: `firestore.rules` e `firestore.indexes.json`
-- Identificador da empresa única neste MVP: `hb-avalia` (ajustável por `NEXT_PUBLIC_DEFAULT_COMPANY_ID`)
+- Identificador atual da empresa: `hb-avalia` (o vínculo fica no perfil de cada conta)
 
-O banco foi limpo dos dados fictícios. A primeira conta cria a empresa real e vira administradora. Depois disso, cada novo cadastro entra automaticamente nessa empresa como colaborador. Uma administradora pode alterar funções e equipes após o cadastro.
+O painel interno não oferece cadastro público nem associação automática. Uma administradora ativa envia convites individuais; o aceite cria o vínculo no servidor somente após autenticação e verificação do e-mail convidado. A avaliação pública de clientes por QR Code continua separada desse fluxo.
 
 ## Coleções
 
@@ -19,8 +19,9 @@ O Firestore não mantém coleções vazias; cada caminho aparece após a primeir
 | Caminho | Uso |
 | --- | --- |
 | `userProfiles/{uid}` | Empresa associada à conta autenticada |
-| `companies/{companyId}` | Nome, proprietário e política de entrada da empresa |
+| `companies/{companyId}` | Nome e proprietário da empresa |
 | `companies/{companyId}/members/{uid}` | Pessoas, função, situação e equipes |
+| `invitations/{invitationId}` | Convites de uso único, acessíveis apenas pelas APIs de servidor |
 | `companies/{companyId}/departments/{id}` | Setores cadastrados |
 | `companies/{companyId}/teams/{id}` | Equipes associadas a setores |
 | `companies/{companyId}/criteria/{id}` | Critérios para avaliar liderança ou colaboradores |
@@ -50,16 +51,19 @@ Em **Configuração → Ciclos**, a administração cria ciclos avulsos de avali
 
 Na área **Pesquisas**, a administração também pode criar uma pesquisa avulsa com datas, público (colaboradores, líderes ou ambos) e perguntas de texto livre e/ou nota de 1 a 5. Uma pessoa pode responder uma vez por pesquisa. As respostas ficam separadas de um marcador privado de participação: a interface e as regras não permitem que a administração consulte quem respondeu, e os resultados não mostram nomes ou e-mails.
 
-## Primeiro acesso
+## Convites e provisionamento inicial
 
-1. Cadastre a primeira conta e informe seu nome e o nome real da empresa. Essa conta configura a empresa com ID `hb-avalia` e se torna administradora.
-2. Cadastros seguintes informam o nome da pessoa e entram automaticamente na mesma empresa como colaboradores.
-3. A administração pode ajustar funções e equipes em Pessoas e equipes. Novos cadastros entram como colaboradores sem equipe; a administração pode ajustar função e equipes depois.
+1. Uma pessoa sem convite não pode criar acesso ao painel nem entrar automaticamente na empresa. Peça à administração um convite para o e-mail que será usado na conta.
+2. Em **Empresa → Convites de acesso**, a administração informa o e-mail, perfil e, quando aplicável, as equipes. O convite dura sete dias e pode ser cancelado ou reenviado; cada reenvio invalida o link anterior.
+3. A pessoa abre o link, cria ou acessa uma conta Firebase para o e-mail convidado, verifica o endereço e aceita o convite. O servidor confere o token, e-mail, validade, empresa, equipes e uso único antes de criar `userProfiles/{uid}` e `companies/{companyId}/members/{uid}`.
 4. Configure setores, equipes, critérios e o ciclo de avaliação. Associe líderes às equipes; eles poderão criar modelos de checklist para colaboradores dessas equipes. A administração também pode atribuir modelos diretamente aos líderes.
+5. Se for necessário provisionar a primeira administradora, crie a conta no Firebase Authentication Console e execute `scripts/provision-initial-admin.mjs` localmente com `FIREBASE_PROJECT_ID` e `FIREBASE_SERVICE_ACCOUNT_JSON` definidos no ambiente. O script recusa provisionar quando já existe administradora ativa; nunca execute com credenciais expostas ou salvas no repositório.
+
+O envio automático depende de `RESEND_API_KEY` e `INVITATION_FROM_EMAIL` no ambiente do servidor. Sem essas configurações, a administração pode copiar o link gerado e compartilhá-lo manualmente. Consulte [VERCEL-SETUP.md](../VERCEL-SETUP.md) para detalhes.
 
 ## Configuração local e publicação
 
-O cliente usa as variáveis `NEXT_PUBLIC_FIREBASE_*` de `.env.local`; consulte `.env.example`. `NEXT_PUBLIC_DEFAULT_COMPANY_ID` define a empresa única durante este MVP. A configuração pública do SDK não substitui as regras. Nunca coloque uma chave de conta de serviço no navegador.
+O cliente usa as variáveis `NEXT_PUBLIC_FIREBASE_*` de `.env.local`; consulte `.env.example`. O vínculo do usuário à empresa é lido de `userProfiles/{uid}` no servidor. A configuração pública do SDK não substitui as regras. Nunca coloque uma chave de conta de serviço no navegador.
 
 Para publicar regras e índices com Firebase CLI autenticado:
 
@@ -69,7 +73,7 @@ npm run deploy:firebase
 
 O script usa `--project hb-avalia2`. Os índices compostos podem levar alguns minutos para terminar de construir. Em produção, sirva o app por HTTPS.
 
-Após qualquer alteração em `firestore.rules`, publique as regras antes de depender das validações no servidor. A configuração local não comprova qual versão está implantada no projeto Firebase; confirme a publicação no Firebase Console ou no histórico de deploy da equipe.
+Após qualquer alteração em `firestore.rules`, publique as regras antes de depender das validações no servidor. A configuração local não comprova qual versão está implantada no projeto Firebase; confirme a publicação no Firebase Console ou no histórico de deploy da equipe. A criação de empresas, perfis e vínculos de membros é bloqueada para clientes do navegador e feita por provisionamento confiável ou pelo aceite server-side do convite.
 
 ## Publicação automática de checklists
 
@@ -82,6 +86,8 @@ Os envios finais de avaliação, indicação de promoção, decisão administrat
 As médias das avaliações são calculadas pelo servidor a partir dos critérios ativos. A indicação busca até 30 avaliações concluídas do colaborador e recalcula as notas com base nas respostas armazenadas; o navegador não escolhe quais notas anexar. Na resposta de pesquisa, a definição das perguntas é lida do Firestore, cada pergunta é validada e o documento de resposta não recebe UID nem horário de envio. O marcador de participação permanece em uma coleção separada e só pode ser lido pela própria conta.
 
 A interface de administração libera o conteúdo da pesquisa após pelo menos 5 respostas. Esse limite reduz a exposição em grupos pequenos, mas não impede que uma resposta aberta revele a identidade por seu próprio conteúdo. A tela orienta participantes a não informar nomes ou detalhes identificadores. Use “sem identificação direta no app” ao explicar essa proteção; não prometa anonimato absoluto.
+
+As avaliações públicas por QR Code aplicam um limite transacional de até 10 envios por endereço identificado por HMAC em uma janela de 10 minutos. Para não depender de TTL ou tarefas agendadas, cada empresa usa no máximo 65.536 documentos de slot fixos. Cada slot guarda contadores individuais identificados pelo HMAC completo; portanto, uma colisão do slot não compartilha nem consome o limite de outro endereço. O mapa mantém até 1.024 origens ativas por slot, um teto conservador que evita documentos Firestore excessivos; entradas vencidas são removidas na próxima gravação. O endereço IP em texto aberto não é persistido, e o segredo HMAC fica em documento privado acessível somente pelo servidor. Documentos legados do limitador não são migrados nem removidos automaticamente.
 
 ## Testes e lint
 

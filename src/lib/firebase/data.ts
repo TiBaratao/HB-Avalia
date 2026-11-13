@@ -38,7 +38,6 @@ import {
   memberDocument,
   surveyParticipantDocument,
   surveyResponses,
-  userProfileDocument,
 } from "./paths";
 import type {
   ChecklistAssignmentDocument,
@@ -112,75 +111,6 @@ async function withOptionalAccess<T>(label: string, operation: Promise<T>, fallb
     }
     throw new Error(`${label}: ${detail}`);
   }
-}
-
-export async function readUserProfile(uid: string) {
-  const snapshot = await getDoc(userProfileDocument(uid));
-  return snapshot.exists() ? snapshot.data() as { companyId: string } : null;
-}
-
-export async function createCompanyForAdmin(input: {
-  companyId: string;
-  uid: string;
-  email: string;
-  name: string;
-  companyName: string;
-}) {
-  const db = getFirebaseDb();
-  const companyRef = doc(db, "companies", input.companyId);
-  const batch = writeBatch(db);
-  const cleanCompanyName = input.companyName.trim();
-  const cleanName = input.name.trim();
-  const cleanEmail = input.email.trim();
-  batch.set(companyRef, {
-    name: cleanCompanyName,
-    ownerUid: input.uid,
-    selfEnrollmentEnabled: true,
-    defaultMemberRole: "EMPLOYEE" satisfies FirebaseRole,
-    createdAt: serverTimestamp(),
-  });
-  batch.set(memberDocument(companyRef.id, input.uid), {
-    uid: input.uid,
-    name: cleanName,
-    email: cleanEmail,
-    role: "ADMIN" satisfies FirebaseRole,
-    status: "ACTIVE",
-    teamIds: [],
-    positionTitle: "Atendente de Açougue Junior",
-    createdAt: serverTimestamp(),
-  });
-  batch.set(userProfileDocument(input.uid), {
-    companyId: companyRef.id,
-    createdAt: serverTimestamp(),
-  });
-  await batch.commit();
-  return companyRef.id;
-}
-
-export async function selfEnrollInCompany(input: {
-  companyId: string;
-  uid: string;
-  email: string;
-  name: string;
-}) {
-  const db = getFirebaseDb();
-  const cleanEmail = input.email.trim().toLowerCase();
-  const batch = writeBatch(db);
-  batch.set(memberDocument(input.companyId, input.uid), {
-    uid: input.uid,
-    name: input.name.trim(),
-    email: cleanEmail,
-    role: "EMPLOYEE" satisfies FirebaseRole,
-    status: "ACTIVE",
-    teamIds: [],
-    positionTitle: "Atendente de Açougue Junior",
-    createdAt: serverTimestamp(),
-  });
-  batch.set(userProfileDocument(input.uid), {
-    companyId: input.companyId,
-    createdAt: serverTimestamp(),
-  });
-  await batch.commit();
 }
 
 export async function loadWorkspaceData(companyId: string, uid: string): Promise<WorkspaceData> {

@@ -1,7 +1,9 @@
 import {
   createUserWithEmailAndPassword,
   onAuthStateChanged,
+  reload,
   sendPasswordResetEmail,
+  sendEmailVerification,
   signInWithEmailAndPassword,
   signOut,
   updateProfile,
@@ -13,10 +15,21 @@ export function signIn(email: string, password: string) {
   return signInWithEmailAndPassword(getFirebaseAuth(), email.trim(), password);
 }
 
-export async function signUp(email: string, password: string, name: string) {
+export async function createInvitedAccount(email: string, password: string, name: string) {
   const credentials = await createUserWithEmailAndPassword(getFirebaseAuth(), email.trim().toLowerCase(), password);
   await updateProfile(credentials.user, { displayName: name.trim() });
+  await sendEmailVerification(credentials.user);
   return credentials;
+}
+
+export async function resendVerificationEmail(user: User) {
+  await sendEmailVerification(user);
+}
+
+export async function refreshEmailVerification(user: User) {
+  await reload(user);
+  await user.getIdToken(true);
+  return user.emailVerified;
 }
 
 export function resetPassword(email: string) {

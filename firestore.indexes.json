@@ -93,12 +93,6 @@
                 ],
     "fieldOverrides":  [
                            {
-                               "collectionGroup":  "customerFeedbackRateLimits",
-                               "fieldPath":  "expiresAt",
-                               "ttl":  true,
-                               "indexes":  []
-                           },
-                           {
                                "collectionGroup":  "checklistTemplates",
                                "fieldPath":  "scheduleEnabled",
                                "indexes":  [

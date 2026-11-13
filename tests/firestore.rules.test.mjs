@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { after, before, beforeEach, test } from "node:test";
 import {
@@ -12,7 +13,6 @@ import {
   setDoc,
   Timestamp,
   updateDoc,
-  writeBatch,
 } from "firebase/firestore";
 
 const projectId = "demo-hb-avalia-rules";
@@ -39,8 +39,6 @@ beforeEach(async () => {
     await setDoc(doc(db, `companies/${companyId}`), {
       name: "Empresa de teste",
       ownerUid: "admin",
-      selfEnrollmentEnabled: true,
-      defaultMemberRole: "EMPLOYEE",
     });
     await setDoc(doc(db, `companies/${companyId}/members/admin`), {
       uid: "admin", email: "admin@example.test", name: "Admin", role: "ADMIN", status: "ACTIVE", teamIds: [],
@@ -63,8 +61,9 @@ beforeEach(async () => {
     await setDoc(doc(db, "companies/another-company"), {
       name: "Outra empresa",
       ownerUid: "admin-other-company",
-      selfEnrollmentEnabled: true,
-      defaultMemberRole: "EMPLOYEE",
+    });
+    await setDoc(doc(db, "companies/another-company/members/admin"), {
+      uid: "admin", email: "admin@example.test", name: "Admin", role: "ADMIN", status: "ACTIVE", teamIds: [],
     });
     await setDoc(doc(db, "companies/another-company/members/admin-other-company"), {
       uid: "admin-other-company", email: "admin-other@example.test", name: "Admin de outra empresa", role: "ADMIN", status: "ACTIVE", teamIds: [],
@@ -78,6 +77,12 @@ beforeEach(async () => {
     await setDoc(doc(db, `companies/${companyId}/members/employee`), {
       uid: "employee", email: "employee@example.test", name: "Colaborador", role: "EMPLOYEE", status: "ACTIVE", teamIds: ["team-1"],
     });
+    for (const uid of ["admin", "inactive-admin", "leader", "leader-2", "leader-other-team", "inactive-leader", "employee"]) {
+      await setDoc(doc(db, `userProfiles/${uid}`), { companyId });
+    }
+    for (const uid of ["admin-other-company", "leader-other-company"]) {
+      await setDoc(doc(db, `userProfiles/${uid}`), { companyId: "another-company" });
+    }
     await setDoc(doc(db, `companies/${companyId}/cycles/cycle-1`), { name: "Ciclo atual", status: "OPEN" });
     await setDoc(doc(db, `companies/${companyId}/criteria/quality`), {
       name: "Qualidade", evaluationType: "EMPLOYEE", active: true,
@@ -105,10 +110,9 @@ test("leaders can save draft answers but cannot submit a score from the client",
   }));
 });
 
-test("self enrollment and first-company bootstrap allow the configured default position title", async () => {
-  const selfEnrollDb = testEnv.authenticatedContext("new-member", { email: "new-member@example.test" }).firestore();
-  const selfEnrollBatch = writeBatch(selfEnrollDb);
-  selfEnrollBatch.set(doc(selfEnrollDb, `companies/${companyId}/members/new-member`), {
+test("clients cannot self-enroll, create a company, or write a user profile", async () => {
+  const memberDb = testEnv.authenticatedContext("new-member", { email: "new-member@example.test" }).firestore();
+  await assertFails(setDoc(doc(memberDb, `companies/${companyId}/members/new-member`), {
     uid: "new-member",
     name: "Novo Colaborador",
     email: "new-member@example.test",
@@ -117,37 +121,82 @@ test("self enrollment and first-company bootstrap allow the configured default p
     teamIds: [],
     positionTitle: "Atendente de Açougue Junior",
     createdAt: serverTimestamp(),
-  });
-  selfEnrollBatch.set(doc(selfEnrollDb, "userProfiles/new-member"), {
+  }));
+  await assertFails(setDoc(doc(memberDb, "userProfiles/new-member"), {
     companyId,
     createdAt: serverTimestamp(),
-  });
-  await assertSucceeds(selfEnrollBatch.commit());
-
-  const bootstrapDb = testEnv.authenticatedContext("first-admin", { email: "first-admin@example.test" }).firestore();
-  const bootstrapBatch = writeBatch(bootstrapDb);
-  bootstrapBatch.set(doc(bootstrapDb, `companies/${companyId}-new`), {
+  }));
+  await assertFails(setDoc(doc(memberDb, `companies/${companyId}-new`), {
     name: "Nova Empresa",
     ownerUid: "first-admin",
-    selfEnrollmentEnabled: true,
-    defaultMemberRole: "EMPLOYEE",
     createdAt: serverTimestamp(),
+  }));
+});
+
+test("an active membership in another company cannot override the account company binding", async () => {
+  const adminDb = testEnv.authenticatedContext("admin", { email: "admin@example.test" }).firestore();
+  await assertFails(getDoc(doc(adminDb, "companies/another-company")));
+  await assertFails(getDoc(doc(adminDb, "companies/another-company/members/admin")));
+
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, "companies/another-company/members/employee"), {
+      uid: "employee", email: "employee@example.test", role: "EMPLOYEE", status: "ACTIVE", teamIds: ["team-1"],
+    });
+    await setDoc(doc(db, "companies/another-company/checklistAssignments/assigned-to-employee"), {
+      assignedToId: "employee",
+      status: "PENDING",
+    });
+    await setDoc(doc(db, "companies/another-company/checklistAssignments/assigned-to-employee/results/item-1"), {
+      status: "PENDING",
+    });
+    await setDoc(doc(db, "companies/another-company/surveys/survey-1"), { active: true });
+    await setDoc(doc(db, "companies/another-company/surveys/survey-1/participants/employee"), {
+      completedAt: Timestamp.now(),
+    });
   });
-  bootstrapBatch.set(doc(bootstrapDb, `companies/${companyId}-new/members/first-admin`), {
-    uid: "first-admin",
-    name: "Primeira Administradora",
-    email: "first-admin@example.test",
-    role: "ADMIN",
+
+  const employeeDb = testEnv.authenticatedContext("employee", { email: "employee@example.test" }).firestore();
+  await assertFails(getDoc(doc(employeeDb, "companies/another-company/checklistAssignments/assigned-to-employee")));
+  await assertFails(getDoc(doc(employeeDb, "companies/another-company/checklistAssignments/assigned-to-employee/results/item-1")));
+  await assertFails(getDoc(doc(employeeDb, "companies/another-company/surveys/survey-1/participants/employee")));
+});
+
+test("the legacy Matrix tenant remains usable before organization metadata is provisioned", async () => {
+  const adminDb = testEnv.authenticatedContext("admin", { email: "admin@example.test" }).firestore();
+  const matrix = doc(adminDb, "companies/hb-avalia");
+  const matrixSnapshot = await getDoc(matrix);
+
+  assert.equal(matrixSnapshot.get("organizationId"), undefined);
+  assert.equal(matrixSnapshot.get("storeId"), undefined);
+  await assertSucceeds(updateDoc(matrix, { name: "Matriz atualizada" }));
+  assert.equal((await getDoc(matrix)).get("name"), "Matriz atualizada");
+  await assertFails(getDoc(doc(adminDb, "companies/another-company")));
+});
+
+test("no browser client, including an administrator, can create a company member", async () => {
+  const adminDb = testEnv.authenticatedContext("admin", { email: "admin@example.test" }).firestore();
+  await assertFails(setDoc(doc(adminDb, `companies/${companyId}/members/invited-member`), {
+    uid: "invited-member",
+    name: "Convidada",
+    email: "invited@example.test",
+    role: "EMPLOYEE",
     status: "ACTIVE",
-    teamIds: [],
+    teamIds: ["team-1"],
     positionTitle: "Atendente de Açougue Junior",
     createdAt: serverTimestamp(),
-  });
-  bootstrapBatch.set(doc(bootstrapDb, "userProfiles/first-admin"), {
-    companyId: `${companyId}-new`,
-    createdAt: serverTimestamp(),
-  });
-  await assertSucceeds(bootstrapBatch.commit());
+  }));
+});
+
+test("invitation records are inaccessible through Firestore clients", async () => {
+  const anonymousDb = testEnv.unauthenticatedContext().firestore();
+  const adminDb = testEnv.authenticatedContext("admin", { email: "admin@example.test" }).firestore();
+  await assertFails(getDoc(doc(anonymousDb, "invitations/invite-1")));
+  await assertFails(setDoc(doc(adminDb, "invitations/invite-1"), {
+    companyId,
+    invitedEmail: "person@example.test",
+    status: "PENDING",
+  }));
 });
 
 test("a browser cannot create a submitted evaluation directly", async () => {
@@ -175,6 +224,7 @@ test("customer feedback data and public QR mappings are inaccessible through Fir
   const responsePath = `companies/${companyId}/customerFeedbackResponses/response-1`;
   const locationPath = `companies/${companyId}/customerFeedbackLocations/general`;
   const rateLimitPath = `companies/${companyId}/customerFeedbackRateLimits/hash`;
+  const privateRateLimitSecretPath = `companies/${companyId}/customerFeedbackPrivate/rateLimitSecret`;
   const qrTokenPath = "customerFeedbackQrTokens/public-token";
 
   await testEnv.withSecurityRulesDisabled(async (context) => {
@@ -182,6 +232,7 @@ test("customer feedback data and public QR mappings are inaccessible through Fir
     await setDoc(doc(db, responsePath), { overallRating: 5, comment: "Avaliação" });
     await setDoc(doc(db, locationPath), { kind: "GENERAL", name: "Supermercado" });
     await setDoc(doc(db, rateLimitPath), { submissionCount: 1 });
+    await setDoc(doc(db, privateRateLimitSecretPath), { secret: "server-only-secret-value" });
     await setDoc(doc(db, qrTokenPath), { companyId, locationId: "general", active: true });
   });
 
@@ -189,6 +240,7 @@ test("customer feedback data and public QR mappings are inaccessible through Fir
     await assertFails(getDoc(doc(db, responsePath)));
     await assertFails(getDoc(doc(db, locationPath)));
     await assertFails(getDoc(doc(db, rateLimitPath)));
+    await assertFails(getDoc(doc(db, privateRateLimitSecretPath)));
     await assertFails(getDoc(doc(db, qrTokenPath)));
     await assertFails(setDoc(doc(db, responsePath), { overallRating: 1 }));
     await assertFails(setDoc(doc(db, qrTokenPath), { companyId, locationId: "general" }));
@@ -329,4 +381,39 @@ test("a leader can start a new development plan after an approved promotion", as
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   }, { merge: true }));
+});
+
+test("organization registry remains inaccessible to browser clients, including director claims", async () => {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, "organizations/hipermercado-baratao"), {
+      name: "Hipermercado Baratão",
+      status: "ACTIVE",
+      schemaVersion: 1,
+      directorRole: "DIRECTOR",
+    });
+    await setDoc(doc(db, "organizations/hipermercado-baratao/stores/matriz"), {
+      organizationId: "hipermercado-baratao",
+      storeId: "matriz",
+      companyId: "hb-avalia-matriz",
+      name: "Matriz",
+      status: "ACTIVE",
+      companyMappingStatus: "PENDING_CONFIRMATION",
+    });
+  });
+
+  const adminDb = testEnv.authenticatedContext("admin", { email: "admin@example.test" }).firestore();
+  const directorDb = testEnv.authenticatedContext("director", { role: "DIRECTOR" }).firestore();
+  const anonymousDb = testEnv.unauthenticatedContext().firestore();
+
+  for (const db of [adminDb, directorDb, anonymousDb]) {
+    await assertFails(getDoc(doc(db, "organizations/hipermercado-baratao")));
+    await assertFails(getDoc(doc(db, "organizations/hipermercado-baratao/stores/matriz")));
+  }
+  await assertFails(setDoc(doc(directorDb, "organizations/hipermercado-baratao/stores/summit"), {
+    organizationId: "hipermercado-baratao",
+    storeId: "summit",
+    companyId: "hb-avalia-summit",
+    name: "Summit",
+  }));
 });

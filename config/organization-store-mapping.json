@@ -1,0 +1,220 @@
+{
+  "organizationId": "hipermercado-baratao",
+  "organizationName": "Hipermercado Baratão",
+  "directorRole": "DIRECTOR",
+  "schemaVersion": 1,
+  "companyInventory": {
+    "status": "PRODUCTION_ORGANIZATION_AND_STORES_PROVISIONED",
+    "inspectedAt": "2026-11-11",
+    "projectId": "hb-avalia2",
+    "readOnly": true,
+    "ownerMappingConfirmation": {
+      "status": "CONFIRMED",
+      "source": "EXPLICIT_CONFIRMATION_FROM_SYSTEM_OWNER",
+      "confirmedAt": "2026-11-10",
+      "scope": "Todos os dados existentes no HB-Avalia, incluindo usuários e registros operacionais, pertencem à loja Matriz.",
+      "appliedToFirestore": true
+    },
+    "productionProvisioning": {
+      "status": "VERIFIED",
+      "appliedAt": "2026-11-11",
+      "projectId": "hb-avalia2",
+      "backupDocumentCount": 156,
+      "directorGrantsCreated": 1,
+      "directorGrantStatus": "AUTHORIZED_DIRECTOR_GRANT_ACTIVE",
+      "directorGrantAppliedAt": "2026-11-11"
+    },
+    "existingCompanyIds": [
+      "hb-avalia"
+    ],
+    "existingCompanies": [
+      {
+        "companyId": "hb-avalia",
+        "name": "Hiper Baratao",
+        "createdAt": "2026-10-26T20:56:40.947Z",
+        "organizationId": null,
+        "storeId": null,
+        "mappingStatus": "CONFIRMED_FOR_MIGRATION_PLANNING_NOT_APPLIED",
+        "confirmedStoreId": "matriz",
+        "mappingSource": "EXPLICIT_CONFIRMATION_FROM_SYSTEM_OWNER",
+        "mappingNote": "O responsável pelo sistema confirmou explicitamente que todos os dados existentes do HB-Avalia pertencem à Matriz. A confirmação é apenas de planejamento; organizationId/storeId ainda não foram gravados no Firestore.",
+        "topLevelCollectionCounts": {
+          "checklistAssignments": 17,
+          "checklistTemplates": 3,
+          "criteria": 4,
+          "customerFeedbackLocations": 4,
+          "customerFeedbackPrivate": 1,
+          "customerFeedbackRateLimits": 2,
+          "customerFeedbackResponses": 6,
+          "customerFeedbackSummaries": 1,
+          "cycles": 1,
+          "departments": 2,
+          "developmentPlans": 2,
+          "evaluations": 2,
+          "members": 6,
+          "promotionRequests": 3,
+          "promotionStatuses": 2,
+          "surveys": 1,
+          "teams": 1
+        },
+        "nestedCollectionCounts": {
+          "checklistAssignments/{document}/results": 67,
+          "evaluations/{document}/answers": 4,
+          "promotionRequests/{document}/evaluationEvidence": 1,
+          "surveys/{document}/participants": 1,
+          "surveys/{document}/responses": 1,
+          "teams/{document}/members": 3
+        },
+        "totalDocumentsInCompanyCollections": 135,
+        "storeIdFieldDocumentCount": 0,
+        "marketIdFieldDocumentCount": 7,
+        "memberRoleCounts": {
+          "ADMIN": 3,
+          "LEADER": 1,
+          "EMPLOYEE": 2
+        },
+        "activeMemberCount": 6,
+        "linkedUserProfileCount": 6,
+        "invitationStatusCounts": {
+          "ACCEPTED": 2,
+          "CANCELED": 1
+        }
+      }
+    ],
+    "plannedCompanyIds": {
+      "matriz": {
+        "companyId": "hb-avalia",
+        "status": "EXISTING_COMPANY_RECOMMENDED_FOR_PRESERVATION"
+      },
+      "loja-2": {
+        "companyId": "hb-avalia-loja-2",
+        "status": "PROPOSED_NOT_CREATED"
+      },
+      "summit": {
+        "companyId": "hb-avalia-summit",
+        "status": "PROPOSED_NOT_CREATED"
+      }
+    },
+    "productionOrganizationExists": true,
+    "customerFeedbackResponseCountsByMarketId": {
+      "matriz": 1,
+      "loja-2": 1,
+      "summit": 2,
+      "UNASSIGNED": 2
+    }
+  },
+  "stores": [
+    {
+      "storeId": "matriz",
+      "name": "Matriz",
+      "companyId": "hb-avalia",
+      "companyIdStatus": "EXISTING_COMPANY_LINKED",
+      "productionStatus": "LINKED_CONFIRMED",
+      "existingCompanyId": "hb-avalia",
+      "mappingStatus": "PENDING_CONFIRMATION",
+      "customerFeedbackMapping": {
+        "status": "CONFIRMED_FOR_CUSTOMER_FEEDBACK_ONLY",
+        "existingLocationId": "market-matriz",
+        "existingMarketId": "matriz",
+        "active": true
+      }
+    },
+    {
+      "storeId": "loja-2",
+      "name": "Loja 2",
+      "companyId": "hb-avalia-loja-2",
+      "companyIdStatus": "CREATED_EMPTY_COMPANY",
+      "productionStatus": "PROVISIONED_EMPTY",
+      "existingCompanyId": null,
+      "mappingStatus": "PENDING_CONFIRMATION",
+      "customerFeedbackMapping": {
+        "status": "CONFIRMED_FOR_CUSTOMER_FEEDBACK_ONLY",
+        "existingLocationId": "market-loja-2",
+        "existingMarketId": "loja-2",
+        "active": true
+      }
+    },
+    {
+      "storeId": "summit",
+      "name": "Summit",
+      "companyId": "hb-avalia-summit",
+      "companyIdStatus": "CREATED_EMPTY_COMPANY",
+      "productionStatus": "PROVISIONED_EMPTY",
+      "existingCompanyId": null,
+      "mappingStatus": "PENDING_CONFIRMATION",
+      "customerFeedbackMapping": {
+        "status": "CONFIRMED_FOR_CUSTOMER_FEEDBACK_ONLY",
+        "existingLocationId": "market-summit",
+        "existingMarketId": "summit",
+        "active": true
+      }
+    }
+  ],
+  "migrationMapping": {
+    "status": "OWNER_CONFIRMED_APPLIED",
+    "source": "EXPLICIT_CONFIRMATION_FROM_SYSTEM_OWNER",
+    "confirmedAt": "2026-11-10",
+    "appliedToFirestore": true,
+    "recommendedStrategy": "PRESERVE_EXISTING_COMPANY_ID_AND_DOCUMENTS",
+    "storeAssignments": [
+      {
+        "storeId": "matriz",
+        "name": "Matriz",
+        "existingCompanyId": "hb-avalia",
+        "companyId": "hb-avalia",
+        "companyIdAction": "KEEP_AS_OPERATIONAL_COMPANY_ID",
+        "companyIdStatus": "CONFIRMED_IN_FIRESTORE",
+        "productionStatus": "LINKED_WITH_EXISTING_OPERATIONAL_DATA_PRESERVED",
+        "records": {
+          "members": 6,
+          "linkedUserProfiles": 6,
+          "operationalDocumentsIncludingNestedCollections": 135,
+          "customerFeedbackResponsesByExistingMarketId": {
+            "matriz": 1,
+            "loja-2": 1,
+            "summit": 2,
+            "UNASSIGNED": 2
+          },
+          "legacyGeneralLocation": "companies/hb-avalia/customerFeedbackLocations/general"
+        },
+        "recordCategories": [
+          "membros e equipes",
+          "avaliações internas e respostas",
+          "ciclos",
+          "PDIs",
+          "promoções e históricos",
+          "checklists e resultados",
+          "pesquisas e respostas",
+          "avaliações de clientes, incluindo registros sem marketId e o local general"
+        ],
+        "marketIdPolicy": "Todos os registros pertencem ao tenant Matriz conforme confirmação do responsável. Preservar marketId existente (inclusive valores loja-2 e summit como metadados históricos); manter ausente quando não existe. Não gerar marketId para o local general nem para respostas históricas sem marketId."
+      },
+      {
+        "storeId": "loja-2",
+        "name": "Loja 2",
+        "companyId": "hb-avalia-loja-2",
+        "companyIdAction": "CREATE_AS_INDEPENDENT_COMPANY_WHEN_AUTHORIZED",
+        "companyIdStatus": "PROVISIONED_EMPTY_COMPANY"
+      },
+      {
+        "storeId": "summit",
+        "name": "Summit",
+        "companyId": "hb-avalia-summit",
+        "companyIdAction": "CREATE_AS_INDEPENDENT_COMPANY_WHEN_AUTHORIZED",
+        "companyIdStatus": "PROVISIONED_EMPTY_COMPANY"
+      }
+    ],
+    "requiredProductionChange": "Concluído: vinculada a Matriz ao companyId hb-avalia no registro da loja e gravados organizationId/storeId no documento companies/hb-avalia. Nenhum documento operacional foi copiado, renomeado, movido ou excluído; memberships/perfis não foram alterados."
+  },
+  "customerFeedbackMarketMappingPending": {
+    "legacyLocationId": "general",
+    "legacyLocationName": "Supermercado",
+    "historicalResponsesWithoutMarketId": 2,
+    "storeId": "matriz",
+    "storeAttributionStatus": "CONFIRMED_BY_OWNER",
+    "marketId": null,
+    "marketIdStatus": "UNASSIGNED_PRESERVE_AS_IS",
+    "mappingSource": "EXPLICIT_CONFIRMATION_FROM_SYSTEM_OWNER",
+    "appliedToFirestore": false
+  }
+}

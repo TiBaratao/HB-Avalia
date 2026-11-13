@@ -5,27 +5,31 @@ import {
   calculatePromotionEvaluationResult,
   type PromotionCompetencyInput,
   type PromotionIndicatorInput,
-} from "../../../functions/promotion-scoring";
-import { getPromotionCareerProgress } from "../../../functions/promotion-career-path";
+} from "../../../functions/promotion-scoring.js";
+import { getPromotionCareerProgress } from "../../../functions/promotion-career-path.js";
 import {
   getActiveSharedTeamIds,
   getMemberTeamIds,
   isActivePromotionAdmin,
   createPromotionEvaluationEvidence,
   createPromotionEvaluationPrivacyFields,
-} from "../../../functions/promotion-security";
-import { getAdminAuth, getAdminFirestore } from "./firebase-admin";
+} from "../../../functions/promotion-security.js";
+import { getAdminAuth, getAdminFirestore } from "./firebase-admin-app.js";
+import { profileMatchesCompany } from "./company-access-core.js";
 
 type JsonObject = Record<string, unknown>;
 const MAX_PROMOTION_EVALUATIONS = 30;
 
 export class PromotionApiError extends Error {
+  readonly status: number;
+
   constructor(
     message: string,
-    readonly status: number,
+    status: number,
   ) {
     super(message);
     this.name = "PromotionApiError";
+    this.status = status;
   }
 }
 
@@ -126,6 +130,7 @@ export async function submitPromotionRequest(uid: string, payload: JsonObject): 
   try {
     return await db.runTransaction(async (transaction) => {
       const leaderRef = companyRef.collection("members").doc(uid);
+      const profileRef = db.collection("userProfiles").doc(uid);
       const employeeRef = companyRef.collection("members").doc(employeeId);
       const evaluationsQuery = companyRef.collection("evaluations")
         .where("evaluatedUserId", "==", employeeId)
@@ -133,7 +138,8 @@ export async function submitPromotionRequest(uid: string, payload: JsonObject): 
         .where("status", "==", "SUBMITTED")
         .orderBy("submittedAt", "desc")
         .limit(MAX_PROMOTION_EVALUATIONS);
-      const [leaderSnapshot, employeeSnapshot, planSnapshot, statusSnapshot, evaluationsSnapshot] = await Promise.all([
+      const [profileSnapshot, leaderSnapshot, employeeSnapshot, planSnapshot, statusSnapshot, evaluationsSnapshot] = await Promise.all([
+        transaction.get(profileRef),
         transaction.get(leaderRef),
         transaction.get(employeeRef),
         transaction.get(planRef),
@@ -142,6 +148,9 @@ export async function submitPromotionRequest(uid: string, payload: JsonObject): 
       ]);
       const leader = leaderSnapshot.data();
       const employee = employeeSnapshot.data();
+      if (!profileMatchesCompany(profileSnapshot, companyId)) {
+        throw new PromotionApiError("Sua conta não está vinculada a esta empresa.", 403);
+      }
       if (!leaderSnapshot.exists || leader?.status !== "ACTIVE" || leader.role !== "LEADER") {
         throw new PromotionApiError("Somente a liderança pode enviar uma indicação.", 403);
       }
@@ -271,12 +280,16 @@ export async function listPromotionHistory(uid: string, companyIdValue: unknown,
   const employeeId = requireString(employeeIdValue, "Colaborador");
   const db = getAdminFirestore();
   const companyRef = db.collection("companies").doc(companyId);
-  const [leaderSnapshot, employeeSnapshot] = await Promise.all([
+  const [profileSnapshot, leaderSnapshot, employeeSnapshot] = await Promise.all([
+    db.collection("userProfiles").doc(uid).get(),
     companyRef.collection("members").doc(uid).get(),
     companyRef.collection("members").doc(employeeId).get(),
   ]);
   const leader = leaderSnapshot.data();
   const employee = employeeSnapshot.data();
+  if (!profileMatchesCompany(profileSnapshot, companyId)) {
+    throw new PromotionApiError("Sua conta não está vinculada a esta empresa.", 403);
+  }
   if (!leaderSnapshot.exists || leader?.status !== "ACTIVE" || leader.role !== "LEADER") {
     throw new PromotionApiError("Somente uma liderança ativa pode consultar o histórico de promoção.", 403);
   }
@@ -335,7 +348,13 @@ export async function decidePromotionRequest(
   try {
     await db.runTransaction(async (transaction) => {
       const adminRef = companyRef.collection("members").doc(uid);
-      const adminSnapshot = await transaction.get(adminRef);
+      const [profileSnapshot, adminSnapshot] = await Promise.all([
+        transaction.get(db.collection("userProfiles").doc(uid)),
+        transaction.get(adminRef),
+      ]);
+      if (!profileMatchesCompany(profileSnapshot, companyId)) {
+        throw new PromotionApiError("Sua conta não está vinculada a esta empresa.", 403);
+      }
       if (!adminSnapshot.exists || !isActivePromotionAdmin(adminSnapshot.data())) {
         throw new PromotionApiError("Somente a administração pode decidir uma indicação.", 403);
       }

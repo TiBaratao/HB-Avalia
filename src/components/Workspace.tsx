@@ -16,6 +16,7 @@ import {
 import { getPromotionCareerProgress } from "../../functions/promotion-career-path";
 import { CompanyLogo } from "./CompanyLogo";
 import { ThemeToggle } from "./ThemeProvider";
+import { CompanyInvitationsPanel } from "./CompanyInvitationsPanel";
 import {
   ArrowLeft,
   Buildings,
@@ -2762,7 +2763,7 @@ function AssignmentCard({ assignment, data, user, execute, admin, compact = fals
 function CompanyPage({ data, execute }: { data: WorkspaceData; execute: (operation: () => Promise<unknown>, message: string) => Promise<boolean> }) {
   const [name, setName] = useState(data.company.name);
   const [copied, setCopied] = useState(false);
-  return <><PageHeading title="Empresa" subtitle="Identificação usada para associar as contas e os registros."/><div className="live-panel settings-card"><div className="live-panel-heading"><div><h2>Identificação</h2></div></div><form className="stack-form" onSubmit={async (event) => { event.preventDefault(); await execute(() => updateCompanyName(data.company.id ?? "", name), "Nome da empresa atualizado."); }}><label>Nome<input required minLength={2} maxLength={100} value={name} onChange={(event) => setName(event.target.value)}/></label><button className="button button-primary" disabled={name.trim() === data.company.name}>Salvar nome</button></form><div className="company-id-box"><span><small>ID da empresa</small><code>{data.company.id}</code></span><button className="button button-outline button-small" onClick={async () => { try { await navigator.clipboard.writeText(data.company.id ?? ""); setCopied(true); window.setTimeout(() => setCopied(false), 1800); } catch { setCopied(false); } }}>{copied ? "Copiado" : "Copiar ID"}</button></div><p className="subtle-note">Este ID identifica a empresa e é usado para vincular novos cadastros a ela.</p></div></>;
+  return <><PageHeading title="Empresa" subtitle="Identificação da empresa e controle de acesso ao painel."/><div className="live-panel settings-card"><div className="live-panel-heading"><div><h2>Identificação</h2></div></div><form className="stack-form" onSubmit={async (event) => { event.preventDefault(); await execute(() => updateCompanyName(data.company.id ?? "", name), "Nome da empresa atualizado."); }}><label>Nome<input required minLength={2} maxLength={100} value={name} onChange={(event) => setName(event.target.value)}/></label><button className="button button-primary" disabled={name.trim() === data.company.name}>Salvar nome</button></form><div className="company-id-box"><span><small>ID da empresa</small><code>{data.company.id}</code></span><button className="button button-outline button-small" onClick={async () => { try { await navigator.clipboard.writeText(data.company.id ?? ""); setCopied(true); window.setTimeout(() => setCopied(false), 1800); } catch { setCopied(false); } }}>{copied ? "Copiado" : "Copiar ID"}</button></div></div><CompanyInvitationsPanel companyId={data.company.id ?? ""} teams={data.teams} departments={data.departments}/></>;
 }
 
 function EvaluationDetailsDialog({ item, data, onClose }: { item: EvaluationWithId; data: WorkspaceData; onClose: () => void }) {

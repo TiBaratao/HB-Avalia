@@ -1,13 +1,45 @@
 export type FirebaseRole = "ADMIN" | "LEADER" | "EMPLOYEE";
+export type OrganizationAccessRole = "DIRECTOR";
 export type FirebaseEvaluationType = "EMPLOYEE" | "LEADER";
 export type FirebaseEvaluationStatus = "DRAFT" | "SUBMITTED";
 
 export type DocumentWithId<T> = T & { id: string };
 
+export interface OrganizationDocument {
+  name: string;
+  status: "ACTIVE" | "INACTIVE";
+  schemaVersion: number;
+  directorRole: OrganizationAccessRole;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export interface OrganizationStoreDocument {
+  organizationId: string;
+  storeId: string;
+  name: string;
+  companyId: string;
+  status: "ACTIVE" | "INACTIVE";
+  companyMappingStatus: "PENDING_CONFIRMATION" | "CONFIRMED";
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export interface OrganizationDirectorDocument {
+  uid: string;
+  email: string;
+  role: OrganizationAccessRole;
+  status: "ACTIVE" | "INACTIVE";
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
 export interface CompanyDocument {
   id?: string;
   name: string;
-  ownerUid: string;
+  ownerUid?: string;
+  organizationId?: string;
+  storeId?: string;
   createdAt?: unknown;
   teamRosterVersion?: number;
   teamRosterSyncedAt?: unknown;

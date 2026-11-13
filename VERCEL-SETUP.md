@@ -6,7 +6,7 @@ Vercel (`https://hbavalia.vercel.app`) is the official deployment platform for H
 
 1. Project `hb-avalia2` uses Email/Password Authentication, the Web App, and the `(default)` Firestore database in `southamerica-east1`.
 2. Firestore rules and indexes live in `firestore.rules` and `firestore.indexes.json`. Always pass `--project hb-avalia2` explicitly (`.firebaserc` may still point to the old project), and verify the selected project before applying rules or indexes.
-3. The app tenant ID is `hb-avalia`, configured through `NEXT_PUBLIC_DEFAULT_COMPANY_ID`. This is separate from the Firebase project ID `hb-avalia2`.
+3. The current company ID is `hb-avalia`. It is stored in each authorized user's `userProfiles/{uid}` record and is separate from the Firebase project ID `hb-avalia2`.
 4. Authorized domains in Firebase Authentication must include `localhost`, `hb-avalia2.firebaseapp.com`, `hb-avalia2.web.app`, and `hbavalia.vercel.app`.
 
 ## Vercel project and environment
@@ -20,15 +20,26 @@ Vercel (`https://hbavalia.vercel.app`) is the official deployment platform for H
    - `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
    - `NEXT_PUBLIC_FIREBASE_APP_ID`
    - `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID` (optional)
-   - `NEXT_PUBLIC_DEFAULT_COMPANY_ID` = `hb-avalia`
    - `NEXT_PUBLIC_USE_FIREBASE_EMULATORS` = `false`
    - `FIREBASE_PROJECT_ID` = `hb-avalia2`
    - `FIREBASE_SERVICE_ACCOUNT_JSON` = the complete service-account JSON for `hb-avalia2` (secret)
    - `CRON_SECRET` = a random secret used only by the scheduled checklist endpoint (secret)
+   - `INVITATION_BASE_URL` = `https://hbavalia.vercel.app`
+   - `RESEND_API_KEY` = Resend API key (optional; secret)
+   - `INVITATION_FROM_EMAIL` = verified sender address in Resend (optional)
 3. The Firebase web configuration is public client configuration. The service account and `CRON_SECRET` are secrets; never commit them, paste them in chat, or give them a `NEXT_PUBLIC_` name.
 4. Keep `NEXT_PUBLIC_USE_FIREBASE_EMULATORS` unset or `false` in deploy contexts. Restrict secrets to production.
 
 Server routes verify Firebase ID tokens and write with the Firebase Admin SDK. Evaluation submissions and survey responses use `POST /api/evaluations` and `POST /api/surveys/responses`; Promotion/PDI uses the `/api/promotion-requests` routes. The browser never receives Admin credentials.
+
+## Painel interno por convite
+
+- The generic login page does not create accounts. Only users with an active `userProfiles/{uid}` and company membership can open the internal panel.
+- Active administrators manage individual invitations from **Empresa → Convites de acesso**. Each invitation is bound to an email, role, and selected teams, expires after seven days, and can be accepted only by a Firebase-authenticated account with that exact verified email.
+- Invite links contain a random 256-bit token in the URL fragment. Firestore stores only its SHA-256 hash; acceptance creates the user profile and company membership atomically and invalidates the token. Resending rotates the token and invalidates the previous link.
+- If Resend is configured, the API sends the invitation email. If it is not configured or delivery fails, the interface reports that explicitly and shows a link for the administrator to share manually. Set both Resend variables and verify the sender before relying on automatic delivery.
+- Provision the first administrator through the trusted local script `scripts/provision-initial-admin.mjs`; it requires a Firebase Authentication account that has already been created and server-only service-account credentials. Do not enable public self-enrollment as a workaround. Current existing administrators can continue to sign in and invite others.
+- These rules and routes do not change `/avaliar/<token>` or its public customer-feedback APIs.
 
 ## Customer feedback by QR Code
 

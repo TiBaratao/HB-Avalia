@@ -2,12 +2,16 @@
 const { createHmac, randomBytes } = require("node:crypto");
 const { FieldValue, Timestamp } = require("firebase-admin/firestore");
 const { SecureActionError } = require("./secure-actions-core");
+const { profileMatchesCompany } = require("./company-access-core");
 
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
 const RATE_LIMIT_MAX_SUBMISSIONS = 10;
+const RATE_LIMIT_SLOT_COUNT = 65_536;
+const RATE_LIMIT_MAX_ACTIVE_CLIENTS_PER_SLOT = 1024;
 const MAX_ACTIVE_CASHIERS = 100;
 const MAX_RECENT_RESPONSES = 100;
 const MIN_RESPONSES_FOR_RESULTS = 5;
+const LEGACY_MATRIX_COMPANY_ID = "hb-avalia";
 const CUSTOMER_FEEDBACK_MARKETS = Object.freeze([
   { id: "matriz", name: "Matriz" },
   { id: "loja-2", name: "Loja 2" },
@@ -35,6 +39,11 @@ function requireRating(value, label) {
   return value;
 }
 
+function rateLimitSlotId(clientHash) {
+  const slot = Number.parseInt(clientHash.slice(0, 8), 16) % RATE_LIMIT_SLOT_COUNT;
+  return `slot-${slot.toString(16).padStart(4, "0")}`;
+}
+
 function safeQrToken(value) {
   if (typeof value !== "string" || !/^[A-Za-z0-9_-]{40,64}$/.test(value)) {
     throw new CustomerFeedbackError("not-found", "Este QR Code não está disponível.");
@@ -43,11 +52,89 @@ function safeQrToken(value) {
 }
 
 async function requireAdmin(db, uid, companyId) {
-  const memberSnapshot = await db.collection("companies").doc(companyId).collection("members").doc(uid).get();
+  const [memberSnapshot, profileSnapshot] = await Promise.all([
+    db.collection("companies").doc(companyId).collection("members").doc(uid).get(),
+    db.collection("userProfiles").doc(uid).get(),
+  ]);
   const member = memberSnapshot.data();
-  if (!memberSnapshot.exists || member?.status !== "ACTIVE" || member.role !== "ADMIN") {
+  if (!profileMatchesCompany(profileSnapshot, companyId)
+    || !memberSnapshot.exists || member?.status !== "ACTIVE" || member.role !== "ADMIN") {
     throw new CustomerFeedbackError("permission-denied", "Somente uma administradora ativa pode acessar estas avaliações.");
   }
+}
+
+function getCompanyStoreId(companySnapshot) {
+  const organizationId = companySnapshot.get("organizationId");
+  const storeId = companySnapshot.get("storeId");
+  if (organizationId == null && storeId == null) return null;
+  if (typeof organizationId !== "string" || !organizationId
+    || typeof storeId !== "string" || !storeId
+    || !CUSTOMER_FEEDBACK_MARKETS.some((market) => market.id === storeId)) {
+    throw new CustomerFeedbackError("failed-precondition", "O vínculo da empresa com sua unidade não está configurado corretamente.");
+  }
+  return { organizationId, storeId };
+}
+
+async function getCompanyMarketScope(db, companySnapshot, companyId, transaction = null) {
+  const companyStore = getCompanyStoreId(companySnapshot);
+  if (!companyStore) return { storeId: null, markets: CUSTOMER_FEEDBACK_MARKETS, allowUnassignedLocations: false };
+
+  const organizationRef = db.collection("organizations").doc(companyStore.organizationId);
+  const storeRef = organizationRef.collection("stores").doc(companyStore.storeId);
+  const [organizationSnapshot, storeSnapshot] = await Promise.all([
+    transaction ? transaction.get(organizationRef) : organizationRef.get(),
+    transaction ? transaction.get(storeRef) : storeRef.get(),
+  ]);
+  if (!organizationSnapshot.exists || organizationSnapshot.get("status") !== "ACTIVE"
+    || !storeSnapshot.exists
+    || storeSnapshot.get("organizationId") !== companyStore.organizationId
+    || storeSnapshot.get("storeId") !== companyStore.storeId
+    || storeSnapshot.get("companyId") !== companyId
+    || storeSnapshot.get("status") !== "ACTIVE"
+    || storeSnapshot.get("companyMappingStatus") !== "CONFIRMED") {
+    throw new CustomerFeedbackError("failed-precondition", "O vínculo desta empresa com a unidade não está confirmado.");
+  }
+
+  const market = CUSTOMER_FEEDBACK_MARKETS.find(({ id }) => id === companyStore.storeId);
+  if (!market) {
+    throw new CustomerFeedbackError("failed-precondition", "A unidade vinculada não possui um mercado de avaliação configurado.");
+  }
+  const isLegacyMatrix = companyId === LEGACY_MATRIX_COMPANY_ID && companyStore.storeId === "matriz";
+  return {
+    storeId: companyStore.storeId,
+    markets: isLegacyMatrix ? CUSTOMER_FEEDBACK_MARKETS : [market],
+    allowUnassignedLocations: isLegacyMatrix,
+  };
+}
+
+function requireAllowedMarket(marketId, marketScope) {
+  if (marketScope.markets.some((market) => market.id === marketId)) return;
+  if (CUSTOMER_FEEDBACK_MARKETS.some((market) => market.id === marketId)) {
+    throw new CustomerFeedbackError("permission-denied", "Esta empresa não pode acessar avaliações de outra unidade.");
+  }
+  throw new CustomerFeedbackError("invalid-argument", "Selecione um mercado válido.");
+}
+
+function isAllowedLocation(location, marketScope) {
+  if (!location || typeof location !== "object") return false;
+  if (marketScope.allowUnassignedLocations
+    && ["GENERAL", "CASHIER"].includes(location.kind)
+    && (location.marketId == null || location.marketId === "")) {
+    return true;
+  }
+  return ["MARKET", "CASHIER"].includes(location.kind)
+    && marketScope.markets.some(({ id }) => id === location.marketId);
+}
+
+function requireAllowedLocation(location, marketScope) {
+  if (!isAllowedLocation(location, marketScope)) {
+    requireAllowedMarket(location?.marketId, marketScope);
+  }
+}
+
+function requireAllowedQrManagementLocation(location, marketScope) {
+  if (marketScope.storeId == null && location?.kind === "GENERAL") return;
+  requireAllowedLocation(location, marketScope);
 }
 
 function locationCollection(db, companyId) {
@@ -58,13 +145,19 @@ function qrTokenDocument(db, token) {
   return db.collection("customerFeedbackQrTokens").doc(token);
 }
 
+function tokenMatchesLocation(tokenSnapshot, companyId, locationId) {
+  return tokenSnapshot.exists
+    && tokenSnapshot.get("companyId") === companyId
+    && tokenSnapshot.get("locationId") === locationId;
+}
+
 function makeQrToken() {
   return randomBytes(32).toString("base64url");
 }
 
-async function ensureMarketLocations(db, companyId) {
+async function ensureMarketLocations(db, companyId, markets) {
   const locations = locationCollection(db, companyId);
-  await Promise.all(CUSTOMER_FEEDBACK_MARKETS.map(async ({ id, name }) => {
+  await Promise.all(markets.map(async ({ id, name }) => {
     const locationRef = locations.doc(`market-${id}`);
     const generatedToken = makeQrToken();
     const tokenRef = qrTokenDocument(db, generatedToken);
@@ -105,9 +198,10 @@ async function getPublicCustomerFeedbackForm(db, rawToken) {
     throw new CustomerFeedbackError("not-found", "Este QR Code não está disponível.");
   }
 
+  const marketScope = await getCompanyMarketScope(db, companySnapshot, companyId);
   const location = locationSnapshot.data();
-  if (!["MARKET", "CASHIER"].includes(location.kind)
-    || !CUSTOMER_FEEDBACK_MARKETS.some(({ id }) => id === location.marketId)) {
+  if (location.publicToken !== token
+    || !isAllowedLocation(location, marketScope)) {
     throw new CustomerFeedbackError("not-found", "Este QR Code não está disponível.");
   }
   const marketRef = location.marketId ? locationCollection(db, companyId).doc(`market-${location.marketId}`) : null;
@@ -186,9 +280,9 @@ async function submitCustomerFeedback(db, input, clientAddress) {
     if (!companySnapshot.exists || !sourceSnapshot.exists || sourceSnapshot.get("active") !== true) {
       throw new CustomerFeedbackError("not-found", "Este QR Code não está disponível.");
     }
+    const marketScope = await getCompanyMarketScope(db, companySnapshot, companyId, transaction);
     const source = sourceSnapshot.data();
-    if (!["MARKET", "CASHIER"].includes(source.kind)
-      || !CUSTOMER_FEEDBACK_MARKETS.some(({ id }) => id === source.marketId)) {
+    if (source.publicToken !== token || !isAllowedLocation(source, marketScope)) {
       throw new CustomerFeedbackError("not-found", "Este QR Code não está disponível.");
     }
     if (source.kind === "CASHIER" && cashierId && cashierId !== locationId) {
@@ -227,23 +321,39 @@ async function submitCustomerFeedback(db, input, clientAddress) {
       throw new CustomerFeedbackError("internal", "A proteção contra envios repetidos não está configurada corretamente.");
     }
     const clientHash = createHmac("sha256", secret).update(String(clientAddress || "unknown")).digest("hex");
-    const rateLimitRef = companyRef.collection("customerFeedbackRateLimits").doc(clientHash);
+    const rateLimitRef = companyRef.collection("customerFeedbackRateLimits").doc(rateLimitSlotId(clientHash));
     const rateLimitSnapshot = await transaction.get(rateLimitRef);
-    const previousWindow = rateLimitSnapshot.get("windowStartedAt");
-    const previousWindowMs = previousWindow?.toMillis?.() ?? 0;
-    const inCurrentWindow = now - previousWindowMs < RATE_LIMIT_WINDOW_MS;
-    const currentCount = inCurrentWindow ? Number(rateLimitSnapshot.get("submissionCount") ?? 0) : 0;
+    const storedClients = rateLimitSnapshot.get("clients");
+    const clients = storedClients && typeof storedClients === "object" && !Array.isArray(storedClients)
+      ? storedClients
+      : {};
+    const activeClients = Object.fromEntries(Object.entries(clients).filter(([, counter]) => {
+      const windowStartedAt = counter?.windowStartedAt;
+      return typeof windowStartedAt?.toMillis === "function"
+        && now - windowStartedAt.toMillis() < RATE_LIMIT_WINDOW_MS;
+    }));
+    const clientCounter = activeClients[clientHash];
+    const previousWindow = clientCounter?.windowStartedAt;
+    const inCurrentWindow = previousWindow != null;
+    const currentCount = inCurrentWindow ? Number(clientCounter.submissionCount ?? 0) : 0;
     if (currentCount >= RATE_LIMIT_MAX_SUBMISSIONS) {
       throw new CustomerFeedbackError("resource-exhausted", "Limite temporário de envios atingido. Tente novamente mais tarde.");
+    }
+    if (!inCurrentWindow && Object.keys(activeClients).length >= RATE_LIMIT_MAX_ACTIVE_CLIENTS_PER_SLOT) {
+      throw new CustomerFeedbackError("resource-exhausted", "Muitas origens enviaram avaliações ao mesmo tempo. Tente novamente mais tarde.");
     }
 
     const responseRef = companyRef.collection("customerFeedbackResponses").doc(responseId);
     const summaryRef = companyRef.collection("customerFeedbackSummaries").doc("overall");
     if (!securitySnapshot.exists) transaction.create(securityRef, { secret });
     transaction.set(rateLimitRef, {
-      windowStartedAt: inCurrentWindow ? previousWindow : Timestamp.fromMillis(now),
-      submissionCount: currentCount + 1,
-      expiresAt: Timestamp.fromMillis(now + RATE_LIMIT_WINDOW_MS * 2),
+      clients: {
+        ...activeClients,
+        [clientHash]: {
+          windowStartedAt: inCurrentWindow ? previousWindow : Timestamp.fromMillis(now),
+          submissionCount: currentCount + 1,
+        },
+      },
     });
     transaction.create(responseRef, {
       sourceLocationId: locationId,
@@ -297,19 +407,21 @@ async function manageCustomerFeedback(db, uid, data) {
   await requireAdmin(db, uid, companyId);
 
   const locations = locationCollection(db, companyId);
+  const companyRef = db.collection("companies").doc(companyId);
+  const companySnapshot = await companyRef.get();
+  if (!companySnapshot.exists) {
+    throw new CustomerFeedbackError("not-found", "Empresa não encontrada.");
+  }
+  const marketScope = await getCompanyMarketScope(db, companySnapshot, companyId);
+
   if (action === "list") {
-    await ensureMarketLocations(db, companyId);
-    const companyRef = db.collection("companies").doc(companyId);
-    const [companySnapshot, locationSnapshot, summarySnapshot] = await Promise.all([
-      companyRef.get(),
+    await ensureMarketLocations(db, companyId, marketScope.markets);
+    const [locationSnapshot, summarySnapshot] = await Promise.all([
       locations.get(),
       companyRef.collection("customerFeedbackSummaries").doc("overall").get(),
     ]);
-    const activeMarketLocations = locationSnapshot.docs.filter((snapshot) => {
-      const location = snapshot.data();
-      return (location.kind === "MARKET" || location.kind === "CASHIER")
-        && CUSTOMER_FEEDBACK_MARKETS.some(({ id }) => id === location.marketId);
-    });
+    const activeMarketLocations = locationSnapshot.docs.filter((snapshot) =>
+      isAllowedLocation(snapshot.data(), marketScope));
     const locationById = new Map(activeMarketLocations.map((snapshot) => [snapshot.id, snapshot.data()]));
     const locationList = activeMarketLocations.map((snapshot) => {
       const location = snapshot.data();
@@ -332,13 +444,22 @@ async function manageCustomerFeedback(db, uid, data) {
           : null,
       };
     });
-    const summary = summarySnapshot.exists ? summarySnapshot.data() : { responseCount: 0, overallRatingTotal: 0 };
+    const scopedMarket = marketScope.storeId
+      ? activeMarketLocations.find((snapshot) =>
+        snapshot.get("kind") === "MARKET" && snapshot.get("marketId") === marketScope.storeId)
+      : null;
+    const summary = scopedMarket && !marketScope.allowUnassignedLocations
+      ? scopedMarket.data()
+      : summarySnapshot.exists ? summarySnapshot.data() : { responseCount: 0, overallRatingTotal: 0 };
     const responseCount = Number(summary.responseCount ?? 0);
     const responseCollection = companyRef.collection("customerFeedbackResponses");
-    const marketResponseSnapshots = await Promise.all(CUSTOMER_FEEDBACK_MARKETS.map(({ id }) =>
-      responseCollection.where("marketId", "==", id).orderBy("submittedAt", "desc").limit(MAX_RECENT_RESPONSES).get()));
-    const recentResponseSnapshots = marketResponseSnapshots.flatMap((snapshot) => snapshot.docs).sort((first, second) =>
-      (second.get("submittedAt")?.toMillis?.() ?? 0) - (first.get("submittedAt")?.toMillis?.() ?? 0));
+    const recentResponseSnapshots = marketScope.allowUnassignedLocations
+      ? (await responseCollection.orderBy("submittedAt", "desc").limit(MAX_RECENT_RESPONSES).get()).docs
+      : (await Promise.all(marketScope.markets.map(({ id }) =>
+        responseCollection.where("marketId", "==", id).orderBy("submittedAt", "desc").limit(MAX_RECENT_RESPONSES).get())))
+        .flatMap((snapshot) => snapshot.docs)
+        .sort((first, second) =>
+          (second.get("submittedAt")?.toMillis?.() ?? 0) - (first.get("submittedAt")?.toMillis?.() ?? 0));
     const recentResponses = recentResponseSnapshots.map((snapshot) => ({
         id: snapshot.id,
         ...snapshot.data(),
@@ -359,7 +480,7 @@ async function manageCustomerFeedback(db, uid, data) {
       companyName: companySnapshot.get("name"),
       maxRecentResponses: MAX_RECENT_RESPONSES,
       privacyThreshold: MIN_RESPONSES_FOR_RESULTS,
-      markets: CUSTOMER_FEEDBACK_MARKETS,
+      markets: marketScope.markets,
     };
   }
 
@@ -367,9 +488,7 @@ async function manageCustomerFeedback(db, uid, data) {
     const name = requireString(data.name, "Nome do caixa", 60);
     const marketId = requireString(data.marketId, "Mercado", 40);
     if (name.length < 2) throw new CustomerFeedbackError("invalid-argument", "O nome do caixa deve ter pelo menos 2 caracteres.");
-    if (!CUSTOMER_FEEDBACK_MARKETS.some((market) => market.id === marketId)) {
-      throw new CustomerFeedbackError("invalid-argument", "Selecione um mercado válido para o caixa.");
-    }
+    requireAllowedMarket(marketId, marketScope);
     const locationRef = locations.doc();
     const token = makeQrToken();
     const tokenRef = qrTokenDocument(db, token);
@@ -417,10 +536,18 @@ async function manageCustomerFeedback(db, uid, data) {
       if (!locationSnapshot.exists || locationSnapshot.get("kind") !== "CASHIER") {
         throw new CustomerFeedbackError("not-found", "Caixa não encontrado.");
       }
-      const tokenRef = qrTokenDocument(db, locationSnapshot.get("publicToken"));
+      requireAllowedLocation(locationSnapshot.data(), marketScope);
+      const currentToken = locationSnapshot.get("publicToken");
+      if (typeof currentToken !== "string" || !currentToken) {
+        throw new CustomerFeedbackError("failed-precondition", "O QR Code do caixa não está configurado.");
+      }
+      const tokenRef = qrTokenDocument(db, currentToken);
       const tokenSnapshot = await transaction.get(tokenRef);
+      if (!tokenMatchesLocation(tokenSnapshot, companyId, locationId)) {
+        throw new CustomerFeedbackError("failed-precondition", "O QR Code do caixa não corresponde à empresa.");
+      }
       transaction.update(locationRef, { active, updatedAt: FieldValue.serverTimestamp() });
-      if (tokenSnapshot.exists) transaction.update(tokenRef, { active });
+      transaction.update(tokenRef, { active });
     });
     return { locationId, active };
   }
@@ -438,6 +565,7 @@ async function manageCustomerFeedback(db, uid, data) {
       if (!locationSnapshot.exists || locationSnapshot.get("kind") !== "CASHIER") {
         throw new CustomerFeedbackError("not-found", "Caixa não encontrado.");
       }
+      requireAllowedQrManagementLocation(locationSnapshot.data(), marketScope);
       if (cashierSnapshots.docs.some((snapshot) => snapshot.id !== locationId
         && snapshot.get("marketId") === locationSnapshot.get("marketId")
         && snapshot.get("name").trim().toLocaleLowerCase("pt-BR") === name.toLocaleLowerCase("pt-BR"))) {
@@ -458,8 +586,16 @@ async function manageCustomerFeedback(db, uid, data) {
       if (!locationSnapshot.exists || !["GENERAL", "MARKET", "CASHIER"].includes(locationSnapshot.get("kind"))) {
         throw new CustomerFeedbackError("not-found", "Local não encontrado.");
       }
-      const oldTokenRef = qrTokenDocument(db, locationSnapshot.get("publicToken"));
+      requireAllowedLocation(locationSnapshot.data(), marketScope);
+      const currentToken = locationSnapshot.get("publicToken");
+      if (typeof currentToken !== "string" || !currentToken) {
+        throw new CustomerFeedbackError("failed-precondition", "O QR Code do local não está configurado.");
+      }
+      const oldTokenRef = qrTokenDocument(db, currentToken);
       const oldTokenSnapshot = await transaction.get(oldTokenRef);
+      if (oldTokenSnapshot.exists && !tokenMatchesLocation(oldTokenSnapshot, companyId, locationId)) {
+        throw new CustomerFeedbackError("failed-precondition", "O QR Code do local pertence a outra empresa.");
+      }
       if (oldTokenSnapshot.exists) transaction.update(oldTokenRef, { active: false });
       transaction.create(newTokenRef, { companyId, locationId, active: locationSnapshot.get("active") === true });
       transaction.update(locationRef, { publicToken: token, updatedAt: FieldValue.serverTimestamp() });
@@ -474,5 +610,6 @@ module.exports = {
   CustomerFeedbackError,
   getPublicCustomerFeedbackForm,
   manageCustomerFeedback,
+  rateLimitSlotId,
   submitCustomerFeedback,
 };

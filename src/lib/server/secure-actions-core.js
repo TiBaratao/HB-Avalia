@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const { FieldValue } = require("firebase-admin/firestore");
+const { profileMatchesCompany } = require("./company-access-core");
 const {
   validateEvaluationAnswers,
   validateSurveyAnswers,
@@ -71,6 +72,7 @@ async function submitEvaluation(db, uid, data) {
 
   return db.runTransaction(async (transaction) => {
     const evaluatorRef = companyRef.collection("members").doc(uid);
+    const profileRef = db.collection("userProfiles").doc(uid);
     const targetRef = companyRef.collection("members").doc(evaluatedUserId);
     const cycleRef = companyRef.collection("cycles").doc(cycleId);
     const criteriaQuery = companyRef.collection("criteria").where("evaluationType", "==", type);
@@ -79,7 +81,8 @@ async function submitEvaluation(db, uid, data) {
       .where("evaluatorId", "==", uid)
       .where("evaluatedUserId", "==", evaluatedUserId)
       .where("type", "==", type);
-    const [evaluatorSnapshot, targetSnapshot, cycleSnapshot, criteriaSnapshot, duplicatesSnapshot] = await Promise.all([
+    const [profileSnapshot, evaluatorSnapshot, targetSnapshot, cycleSnapshot, criteriaSnapshot, duplicatesSnapshot] = await Promise.all([
+      transaction.get(profileRef),
       transaction.get(evaluatorRef),
       transaction.get(targetRef),
       transaction.get(cycleRef),
@@ -87,6 +90,9 @@ async function submitEvaluation(db, uid, data) {
       transaction.get(duplicatesQuery),
     ]);
 
+    if (!profileMatchesCompany(profileSnapshot, companyId)) {
+      throw new SecureActionError("permission-denied", "Sua conta não está vinculada a esta empresa.");
+    }
     const evaluator = evaluatorSnapshot.data();
     const target = targetSnapshot.data();
     if (!evaluatorSnapshot.exists || evaluator?.status !== "ACTIVE") throw new SecureActionError("permission-denied", "Sua conta não está ativa nesta empresa.");
@@ -170,11 +176,16 @@ async function submitSurveyResponse(db, uid, data) {
 
   return db.runTransaction(async (transaction) => {
     const memberRef = companyRef.collection("members").doc(uid);
-    const [memberSnapshot, surveySnapshot, participantSnapshot] = await Promise.all([
+    const profileRef = db.collection("userProfiles").doc(uid);
+    const [profileSnapshot, memberSnapshot, surveySnapshot, participantSnapshot] = await Promise.all([
+      transaction.get(profileRef),
       transaction.get(memberRef),
       transaction.get(surveyRef),
       transaction.get(participantRef),
     ]);
+    if (!profileMatchesCompany(profileSnapshot, companyId)) {
+      throw new SecureActionError("permission-denied", "Sua conta não está vinculada a esta empresa.");
+    }
     const member = memberSnapshot.data();
     const survey = surveySnapshot.data();
     if (!memberSnapshot.exists || member?.status !== "ACTIVE") throw new SecureActionError("permission-denied", "Sua conta não está ativa nesta empresa.");

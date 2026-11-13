@@ -125,8 +125,16 @@ async function publishScheduledChecklists(db, options = {}) {
       : template.responsible === "LEADER"
         ? ["LEADER"]
         : ["EMPLOYEE", "LEADER"];
-    const recipients = membersSnapshot.docs
+    const activeMembers = membersSnapshot.docs
       .map((memberSnapshot) => ({ uid: memberSnapshot.id, ...memberSnapshot.data() }))
+    const profileSnapshots = activeMembers.length
+      ? await db.getAll(...activeMembers.map((member) => db.collection("userProfiles").doc(member.uid)))
+      : [];
+    const recipients = activeMembers
+      .filter((_member, index) =>
+        profileSnapshots[index].exists
+        && profileSnapshots[index].get("companyId") === companyRef.id,
+      )
       .filter((member) =>
         targetRoles.includes(member.role)
         && Array.isArray(member.teamIds)

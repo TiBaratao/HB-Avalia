@@ -1,23 +1,24 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import type { User } from "firebase/auth";
-import { AccountSetup } from "../components/AccountSetup";
+import { AccessPending } from "../components/AccessPending";
 import { AuthPanel } from "../components/AuthPanel";
 import { CompanyLogo } from "../components/CompanyLogo";
+import { EmailVerificationPanel } from "../components/EmailVerificationPanel";
 import { Workspace } from "../components/Workspace";
+import { DirectorStoreSelector } from "../components/DirectorStoreSelector";
 import { ThemeToggle } from "../components/ThemeProvider";
 import { signOutCurrentUser, watchAuthState } from "../lib/firebase/auth";
-import { readUserProfile, selfEnrollInCompany } from "../lib/firebase/data";
-
-const DEFAULT_COMPANY_ID = process.env.NEXT_PUBLIC_DEFAULT_COMPANY_ID || "hb-avalia";
+import { fetchCurrentAccess, type CurrentAccess } from "../lib/invitations-client";
 
 export default function HomePage() {
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [authError, setAuthError] = useState("");
   const [profileStatus, setProfileStatus] = useState<"loading" | "missing" | "ready" | "error">("loading");
-  const [companyId, setCompanyId] = useState("");
+  const [profileError, setProfileError] = useState("");
+  const [access, setAccess] = useState<CurrentAccess | null>(null);
   const [profileVersion, setProfileVersion] = useState(0);
 
   useEffect(() => {
@@ -37,51 +38,47 @@ export default function HomePage() {
   useEffect(() => {
     if (!user) {
       setProfileStatus("missing");
-      setCompanyId("");
+      setAccess(null);
+      return;
+    }
+    if (!user.emailVerified) {
+      setProfileStatus("loading");
+      setAccess(null);
       return;
     }
     let active = true;
     setProfileStatus("loading");
-    readUserProfile(user.uid)
-      .then(async (profile) => {
+    fetchCurrentAccess()
+      .then((access) => {
         if (!active) return;
-        if (!profile && user.email && user.displayName?.trim()) {
-          try {
-            await selfEnrollInCompany({
-              companyId: DEFAULT_COMPANY_ID,
-              uid: user.uid,
-              email: user.email,
-              name: user.displayName,
-            });
-            const createdProfile = await readUserProfile(user.uid);
-            if (!active) return;
-            setCompanyId(createdProfile?.companyId ?? "");
-            setProfileStatus(createdProfile ? "ready" : "missing");
-            return;
-          } catch {
-            // The company may not exist yet; show the one-time first-company setup.
-          }
-        }
-        setCompanyId(profile?.companyId ?? "");
-        setProfileStatus(profile ? "ready" : "missing");
+        setAccess(access);
+        setProfileError("");
+        setProfileStatus("ready");
       })
       .catch((error) => {
         if (!active) return;
-        setAuthError(error instanceof Error ? error.message : "Não foi possível ler seu perfil.");
+        if (error && typeof error === "object" && "status" in error && error.status === 403) {
+          setProfileStatus("missing");
+          return;
+        }
+        setProfileError(error instanceof Error ? error.message : "Não foi possível validar seu acesso.");
         setProfileStatus("error");
       });
     return () => { active = false; };
   }, [user, profileVersion]);
 
-  const reloadProfile = useCallback(() => setProfileVersion((value) => value + 1), []);
-
   if (!authReady) return <LoadingScreen label="Conectando ao Firebase…" />;
   if (authError && !user) return <MessageScreen title="Não foi possível conectar" message={authError} action="Recarregar" onAction={() => window.location.reload()} />;
   if (!user) return <AuthPanel />;
+  if (!user.emailVerified) return <EmailVerificationPanel user={user} onVerified={() => setProfileVersion((value) => value + 1)} />;
   if (profileStatus === "loading") return <LoadingScreen label="Carregando sua conta…" />;
-  if (profileStatus === "error") return <MessageScreen title="Falha ao carregar seu acesso" message={authError} action="Sair" onAction={() => void signOutCurrentUser()} />;
-  if (profileStatus === "missing") return <AccountSetup user={user} onDone={reloadProfile} />;
-  return <Workspace key={`${user.uid}:${companyId}`} user={user} companyId={companyId} onSignOut={() => void signOutCurrentUser()} />;
+  if (profileStatus === "error") return <MessageScreen title="Falha ao carregar seu acesso" message={profileError} action="Sair" onAction={() => void signOutCurrentUser()} />;
+  if (profileStatus === "missing") return <AccessPending user={user} />;
+  if (!access) return <MessageScreen title="Acesso indisponível" message="Não foi possível identificar seu perfil de acesso." action="Sair" onAction={() => void signOutCurrentUser()} />;
+  if (access.accessType === "DIRECTOR") {
+    return <DirectorStoreSelector access={access} accountEmail={user.email ?? ""} onSignOut={() => void signOutCurrentUser()} />;
+  }
+  return <Workspace key={`${user.uid}:${access.companyId}`} user={user} companyId={access.companyId} onSignOut={() => void signOutCurrentUser()} />;
 }
 
 function LoadingScreen({ label }: { label: string }) {
